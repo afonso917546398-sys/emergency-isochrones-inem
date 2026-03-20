@@ -27,6 +27,7 @@
     --surface: #1a1c24;
     --surface-hover: #22252f;
     --border: #2a2d38;
+    --border-light: #353845;
     --text: #e2e4ea;
     --text-muted: #8b8fa3;
     --text-faint: #565a6e;
@@ -35,6 +36,7 @@
     --iso-10: #ef4444;
     --iso-20: #f59e0b;
     --iso-30: #22c55e;
+    --panel-width: 320px;
   }
 
   body {
@@ -43,49 +45,46 @@
     color: var(--text);
     height: 100vh;
     overflow: hidden;
+    display: flex;
   }
 
-  #map {
-    width: 100%;
+  /* Sidebar */
+  .sidebar {
+    width: var(--panel-width);
+    min-width: var(--panel-width);
     height: 100vh;
-  }
-
-  /* Dark Leaflet tiles */
-  .leaflet-container { background: #0f1117; }
-
-  /* Control panel */
-  .control-panel {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    z-index: 1000;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-    width: 280px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    max-height: calc(100vh - 32px);
-    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 1000;
   }
 
-  .control-panel::-webkit-scrollbar { width: 4px; }
-  .control-panel::-webkit-scrollbar-track { background: transparent; }
-  .control-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .sidebar-header {
+    padding: 20px 18px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
 
-  .panel-title {
-    font-size: 14px;
+  .sidebar-title {
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: -0.01em;
-    margin-bottom: 4px;
     color: var(--text);
   }
 
-  .panel-subtitle {
+  .sidebar-subtitle {
     font-size: 11px;
     color: var(--text-muted);
-    margin-bottom: 16px;
-    line-height: 1.4;
+    margin-top: 2px;
+  }
+
+  /* Global controls */
+  .global-controls {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
 
   .section-label {
@@ -95,142 +94,221 @@
     letter-spacing: 0.08em;
     color: var(--text-faint);
     margin-bottom: 8px;
-    margin-top: 16px;
   }
 
-  .section-label:first-of-type { margin-top: 0; }
+  .iso-toggles {
+    display: flex;
+    gap: 6px;
+  }
 
-  .toggle-row {
+  .iso-btn {
+    flex: 1;
+    padding: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+    font-family: inherit;
+  }
+
+  .iso-btn.active-10 {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--iso-10);
+    color: var(--iso-10);
+  }
+
+  .iso-btn.active-20 {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: var(--iso-20);
+    color: var(--iso-20);
+  }
+
+  .iso-btn.active-30 {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: var(--iso-30);
+    color: var(--iso-30);
+  }
+
+  .iso-btn:hover { background: var(--surface-hover); }
+  .iso-btn.active-10:hover { background: rgba(239, 68, 68, 0.22); }
+  .iso-btn.active-20:hover { background: rgba(245, 158, 11, 0.22); }
+  .iso-btn.active-30:hover { background: rgba(34, 197, 94, 0.22); }
+
+  /* Pin list */
+  .pin-list-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .pin-list-container::-webkit-scrollbar { width: 5px; }
+  .pin-list-container::-webkit-scrollbar-track { background: transparent; }
+  .pin-list-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .layer-group {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .layer-header {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 6px 0;
+    padding: 10px 18px;
     cursor: pointer;
     user-select: none;
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 2;
+    border-bottom: 1px solid var(--border);
   }
 
-  .toggle-row:hover { opacity: 0.85; }
+  .layer-header:hover { background: var(--surface-hover); }
 
-  .toggle-switch {
-    position: relative;
-    width: 36px;
-    height: 20px;
+  .layer-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
     flex-shrink: 0;
   }
 
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
+  .layer-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
   }
 
-  .toggle-slider {
-    position: absolute;
-    inset: 0;
-    background: var(--border);
+  .layer-count {
+    font-size: 10px;
+    color: var(--text-faint);
+    background: var(--bg);
+    padding: 2px 7px;
     border-radius: 10px;
-    transition: background 0.2s;
+  }
+
+  .layer-toggle-all {
+    font-size: 10px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+
+  .layer-toggle-all:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  .pin-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 18px 7px 28px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s;
+  }
+
+  .pin-item:hover { background: var(--surface-hover); }
+
+  .pin-item.active { background: rgba(59, 130, 246, 0.08); }
+
+  .pin-checkbox {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 2px solid var(--border-light);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
     cursor: pointer;
   }
 
-  .toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    left: 2px;
-    top: 2px;
-    background: var(--text);
-    border-radius: 50%;
-    transition: transform 0.2s;
+  .pin-checkbox.checked {
+    border-color: transparent;
   }
 
-  .toggle-switch input:checked + .toggle-slider {
-    background: var(--aem-color);
+  .pin-checkbox.checked .check-icon {
+    display: block;
   }
 
-  .toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(16px);
+  .pin-checkbox .check-icon {
+    display: none;
+    width: 10px;
+    height: 10px;
   }
 
-  .toggle-label {
+  .pin-name {
     font-size: 12px;
     font-weight: 500;
     color: var(--text);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .layer-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+  .pin-item:not(.enabled) .pin-name {
+    color: var(--text-faint);
+  }
+
+  .pin-locate {
+    opacity: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: opacity 0.15s;
     flex-shrink: 0;
   }
 
-  /* Isochrone legend */
-  .iso-legend {
-    display: flex;
-    gap: 12px;
-    margin-top: 6px;
-    padding: 10px 12px;
-    background: rgba(255,255,255,0.03);
-    border-radius: 8px;
-    border: 1px solid var(--border);
+  .pin-item:hover .pin-locate { opacity: 0.6; }
+  .pin-item:hover .pin-locate:hover { opacity: 1; }
+
+  .pin-locate svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: var(--text-muted);
+    stroke-width: 2;
   }
 
-  .iso-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11px;
-    color: var(--text-muted);
+  /* Method note */
+  .sidebar-footer {
+    padding: 12px 18px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
   }
 
-  .iso-swatch {
-    width: 12px;
-    height: 12px;
-    border-radius: 3px;
-    opacity: 0.7;
-  }
-
-  /* Pin counter */
-  .pin-count {
-    font-size: 11px;
-    color: var(--text-faint);
-    font-weight: 400;
-  }
-
-  /* Stats bar */
-  .stats-bar {
-    position: absolute;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 1000;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 20px;
-    display: flex;
-    gap: 24px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-  }
-
-  .stat {
-    text-align: center;
-  }
-
-  .stat-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text);
-  }
-
-  .stat-label {
+  .method-note {
     font-size: 10px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    line-height: 1.5;
+    color: var(--text-faint);
   }
+
+  .method-note strong { color: var(--text-muted); }
+
+  /* Map */
+  #map {
+    flex: 1;
+    height: 100vh;
+  }
+
+  .leaflet-container { background: #0f1117; }
 
   /* Popup styles */
   .leaflet-popup-content-wrapper {
@@ -268,25 +346,42 @@
     font-family: 'SF Mono', 'Fira Code', monospace;
   }
 
-  .leaflet-popup-close-button {
-    color: var(--text-muted) !important;
+  .leaflet-popup-close-button { color: var(--text-muted) !important; }
+
+  .marker-tooltip {
+    background: #1a1c24 !important;
+    color: #e2e4ea !important;
+    border: 1px solid #2a2d38 !important;
+    border-radius: 4px !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 2px 8px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
   }
 
-  /* Note */
-  .method-note {
-    margin-top: 16px;
-    padding: 10px 12px;
-    background: rgba(255,255,255,0.02);
+  .marker-tooltip::before {
+    border-top-color: #1a1c24 !important;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    position: absolute;
+    bottom: 16px;
+    left: calc(var(--panel-width) + 50%);
+    transform: translateX(calc(-50% - var(--panel-width) / 2));
+    z-index: 1000;
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    font-size: 10px;
-    line-height: 1.5;
-    color: var(--text-faint);
+    border-radius: 10px;
+    padding: 8px 20px;
+    display: flex;
+    gap: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
   }
 
-  .method-note strong {
-    color: var(--text-muted);
-  }
+  .stat { text-align: center; }
+  .stat-value { font-size: 16px; font-weight: 700; color: var(--text); }
+  .stat-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 
   /* Attribution */
   .attribution {
@@ -305,112 +400,105 @@
 
   .attribution a:hover { text-decoration: underline; }
 
+  /* Mobile sidebar toggle */
+  .sidebar-toggle {
+    display: none;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 1001;
+    width: 40px;
+    height: 40px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .sidebar-toggle svg {
+    width: 20px;
+    height: 20px;
+    stroke: var(--text);
+    fill: none;
+    stroke-width: 2;
+  }
+
   /* Responsive */
-  @media (max-width: 640px) {
-    .control-panel {
-      top: auto;
-      bottom: 70px;
-      right: 8px;
-      left: 8px;
-      width: auto;
-      max-height: 40vh;
+  @media (max-width: 768px) {
+    .sidebar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 1002;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.5);
     }
+
+    .sidebar.open { transform: translateX(0); }
+
+    .sidebar-toggle { display: flex; }
+
     .stats-bar {
-      bottom: 8px;
-      gap: 16px;
-      padding: 8px 14px;
+      left: 50%;
+      transform: translateX(-50%);
     }
-    .stat-value { font-size: 14px; }
+
+    #map { width: 100%; }
   }
 </style>
 </head>
 <body>
 
+<!-- Mobile toggle -->
+<button class="sidebar-toggle" id="sidebarToggle">
+  <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-title">Isócronas de Emergência</div>
+    <div class="sidebar-subtitle">INEM — CODU Centro + VMER DRC</div>
+  </div>
+
+  <div class="global-controls">
+    <div class="section-label">Tempos de resposta</div>
+    <div class="iso-toggles">
+      <button class="iso-btn active-10" data-iso="10" id="btn-iso-10">10 min</button>
+      <button class="iso-btn active-20" data-iso="20" id="btn-iso-20">20 min</button>
+      <button class="iso-btn active-30" data-iso="30" id="btn-iso-30">30 min</button>
+    </div>
+  </div>
+
+  <div class="pin-list-container" id="pinList">
+    <!-- Dynamically populated -->
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="method-note">
+      <strong>Metodologia:</strong> Isócronas via Valhalla/OSM com 1.3x velocidade (condução de emergência). Ambulâncias em missão urgente: ~30% acima dos limites normais.
+    </div>
+  </div>
+</aside>
+
+<!-- Map -->
 <div id="map"></div>
-
-<!-- Control Panel -->
-<div class="control-panel">
-  <div class="panel-title">Isócronas de Emergência</div>
-  <div class="panel-subtitle">INEM — Região Centro (CODU Centro)</div>
-
-  <div class="section-label">Camadas</div>
-
-  <label class="toggle-row">
-    <div class="toggle-switch">
-      <input type="checkbox" id="toggle-aem" checked>
-      <span class="toggle-slider"></span>
-    </div>
-    <span class="layer-dot" style="background: var(--aem-color)"></span>
-    <span class="toggle-label">AEM CODU Centro <span class="pin-count">(20)</span></span>
-  </label>
-
-  <label class="toggle-row">
-    <div class="toggle-switch">
-      <input type="checkbox" id="toggle-vmer" checked>
-      <span class="toggle-slider" style=""></span>
-    </div>
-    <span class="layer-dot" style="background: var(--vmer-color)"></span>
-    <span class="toggle-label">VMER DRC <span class="pin-count">(10)</span></span>
-  </label>
-
-  <div class="section-label">Isócronas</div>
-
-  <label class="toggle-row">
-    <div class="toggle-switch">
-      <input type="checkbox" id="toggle-iso10" checked>
-      <span class="toggle-slider" style=""></span>
-    </div>
-    <span class="toggle-label">10 minutos</span>
-  </label>
-
-  <label class="toggle-row">
-    <div class="toggle-switch">
-      <input type="checkbox" id="toggle-iso20" checked>
-      <span class="toggle-slider" style=""></span>
-    </div>
-    <span class="toggle-label">20 minutos</span>
-  </label>
-
-  <label class="toggle-row">
-    <div class="toggle-switch">
-      <input type="checkbox" id="toggle-iso30" checked>
-      <span class="toggle-slider" style=""></span>
-    </div>
-    <span class="toggle-label">30 minutos</span>
-  </label>
-
-  <div class="iso-legend">
-    <div class="iso-item">
-      <div class="iso-swatch" style="background: var(--iso-10)"></div>
-      10 min
-    </div>
-    <div class="iso-item">
-      <div class="iso-swatch" style="background: var(--iso-20)"></div>
-      20 min
-    </div>
-    <div class="iso-item">
-      <div class="iso-swatch" style="background: var(--iso-30)"></div>
-      30 min
-    </div>
-  </div>
-
-  <div class="method-note">
-    <strong>Metodologia:</strong> Isócronas calculadas via Valhalla (OpenStreetMap) com multiplicador de 1.3x na velocidade para simular condução de emergência (luzes/sirenes). Ambulâncias em missão urgente circulam ~30% acima dos limites normais de velocidade (Pappinen & Nordquist, 2022).
-  </div>
-</div>
 
 <!-- Stats -->
 <div class="stats-bar">
   <div class="stat">
-    <div class="stat-value">30</div>
-    <div class="stat-label">Meios</div>
+    <div class="stat-value" id="stat-active">30</div>
+    <div class="stat-label">Ativos</div>
   </div>
   <div class="stat">
-    <div class="stat-value">20</div>
+    <div class="stat-value" id="stat-aem">20</div>
     <div class="stat-label">AEM</div>
   </div>
   <div class="stat">
-    <div class="stat-value">10</div>
+    <div class="stat-value" id="stat-vmer">10</div>
     <div class="stat-label">VMER</div>
   </div>
 </div>
@@ -423,22 +511,33 @@
 <script src="data.js"></script>
 <script>
 (function() {
-  // Initialize map centered on Região Centro
+  // ─── Map Init ───
   const map = L.map('map', {
-    center: [40.25, -8.2],
+    center: [40.15, -8.15],
     zoom: 8,
     zoomControl: false,
     attributionControl: false
   });
 
-  // Dark tile layer
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  // Base layer: dark background without labels
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     maxZoom: 19
   }).addTo(map);
 
-  L.control.zoom({ position: 'bottomleft' }).addTo(map);
+  // Labels pane - renders ABOVE isochrones so place names stay readable
+  map.createPane('labelsPane');
+  map.getPane('labelsPane').style.zIndex = 450;
+  map.getPane('labelsPane').style.pointerEvents = 'none';
 
-  // Color config
+  // Labels layer: Carto Voyager labels (high contrast, good readability)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+    pane: 'labelsPane'
+  }).addTo(map);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  // ─── Colors ───
   const COLORS = {
     aem: '#3b82f6',
     vmer: '#f59e0b',
@@ -447,16 +546,11 @@
     iso30: '#22c55e'
   };
 
-  // Layer groups
-  const layers = {
-    aemMarkers: L.layerGroup().addTo(map),
-    vmerMarkers: L.layerGroup().addTo(map),
-    iso10: L.layerGroup().addTo(map),
-    iso20: L.layerGroup().addTo(map),
-    iso30: L.layerGroup().addTo(map)
-  };
+  // ─── State ───
+  const pinState = {}; // key -> { enabled, marker, isoLayers: { '10': L.geoJSON, '20': ..., '30': ... } }
+  const isoVisible = { '10': true, '20': true, '30': true };
 
-  // Custom marker icons
+  // ─── Helpers ───
   function createIcon(color, size) {
     return L.divIcon({
       className: '',
@@ -467,138 +561,224 @@
         border: 2px solid rgba(255,255,255,0.9);
         border-radius: 50%;
         box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 3px ${color}33;
+        transition: transform 0.15s;
       "></div>`,
       iconSize: [size, size],
       iconAnchor: [size/2, size/2]
     });
   }
 
-  // Add isochrone polygons
-  function addIsochrones(pin, layerType) {
-    const isoConfig = [
-      { key: '30', color: COLORS.iso30, group: layers.iso30, opacity: 0.08 },
-      { key: '20', color: COLORS.iso20, group: layers.iso20, opacity: 0.12 },
-      { key: '10', color: COLORS.iso10, group: layers.iso10, opacity: 0.18 },
-    ];
-
-    isoConfig.forEach(cfg => {
-      const geom = pin.isochrones[cfg.key];
-      if (!geom) return;
-
-      const poly = L.geoJSON(geom, {
-        style: {
-          color: cfg.color,
-          weight: 1.5,
-          opacity: 0.5,
-          fillColor: cfg.color,
-          fillOpacity: cfg.opacity,
-          dashArray: cfg.key === '30' ? '6 4' : null
-        }
-      });
-
-      poly._pinName = pin.name;
-      poly._layerType = layerType;
-      cfg.group.addLayer(poly);
+  function createIsoLayer(geometry, color, opacity, dashed) {
+    return L.geoJSON(geometry, {
+      style: {
+        color: color,
+        weight: 1.5,
+        opacity: 0.5,
+        fillColor: color,
+        fillOpacity: opacity,
+        dashArray: dashed ? '6 4' : null
+      }
     });
   }
 
-  // Add markers and isochrones for each pin
+  // ─── Add pins ───
   function addPin(pin, layerType) {
+    const key = `${layerType}_${pin.name}`;
     const color = layerType === 'aem' ? COLORS.aem : COLORS.vmer;
-    const markerGroup = layerType === 'aem' ? layers.aemMarkers : layers.vmerMarkers;
     const typeLabel = layerType === 'aem' ? 'AEM CODU Centro' : 'VMER DRC';
 
-    const marker = L.marker([pin.lat, pin.lon], {
-      icon: createIcon(color, 12)
-    });
-
+    const marker = L.marker([pin.lat, pin.lon], { icon: createIcon(color, 12) });
     marker.bindPopup(`
       <div class="popup-name" style="color: ${color}">${pin.name}</div>
       <div class="popup-type">${typeLabel}</div>
       <div class="popup-coords">${pin.lat.toFixed(6)}, ${pin.lon.toFixed(6)}</div>
     `);
+    marker.bindTooltip(pin.name, { permanent: false, direction: 'top', offset: [0, -10], className: 'marker-tooltip' });
+    marker.addTo(map);
 
-    marker.bindTooltip(pin.name, {
-      permanent: false,
-      direction: 'top',
-      offset: [0, -10],
-      className: 'marker-tooltip'
+    const isoLayers = {};
+    const isoConfig = [
+      { key: '30', color: COLORS.iso30, opacity: 0.08, dashed: true },
+      { key: '20', color: COLORS.iso20, opacity: 0.12, dashed: false },
+      { key: '10', color: COLORS.iso10, opacity: 0.18, dashed: false },
+    ];
+
+    isoConfig.forEach(cfg => {
+      const geom = pin.isochrones[cfg.key];
+      if (!geom) return;
+      const layer = createIsoLayer(geom, cfg.color, cfg.opacity, cfg.dashed);
+      if (isoVisible[cfg.key]) layer.addTo(map);
+      isoLayers[cfg.key] = layer;
     });
 
-    markerGroup.addLayer(marker);
-    addIsochrones(pin, layerType);
+    pinState[key] = { enabled: true, marker, isoLayers, layerType, pin };
   }
 
-  // Populate map
-  ISOCHRONE_DATA.aem_codu_centro.forEach(pin => addPin(pin, 'aem'));
-  ISOCHRONE_DATA.vmer_drc.forEach(pin => addPin(pin, 'vmer'));
+  ISOCHRONE_DATA.aem_codu_centro.forEach(p => addPin(p, 'aem'));
+  ISOCHRONE_DATA.vmer_drc.forEach(p => addPin(p, 'vmer'));
 
-  // Toggle controls
-  document.getElementById('toggle-aem').addEventListener('change', function() {
-    if (this.checked) {
-      map.addLayer(layers.aemMarkers);
+  // ─── Toggle individual pin ───
+  function togglePin(key, enabled) {
+    const state = pinState[key];
+    if (!state) return;
+    state.enabled = enabled;
+
+    if (enabled) {
+      state.marker.addTo(map);
+      Object.entries(state.isoLayers).forEach(([isoKey, layer]) => {
+        if (isoVisible[isoKey]) layer.addTo(map);
+      });
     } else {
-      map.removeLayer(layers.aemMarkers);
+      map.removeLayer(state.marker);
+      Object.values(state.isoLayers).forEach(layer => map.removeLayer(layer));
     }
-    updateIsoVisibility();
-  });
 
-  document.getElementById('toggle-vmer').addEventListener('change', function() {
-    if (this.checked) {
-      map.addLayer(layers.vmerMarkers);
-    } else {
-      map.removeLayer(layers.vmerMarkers);
-    }
-    updateIsoVisibility();
-  });
-
-  document.getElementById('toggle-iso10').addEventListener('change', function() {
-    toggleIsoLayer('iso10', this.checked);
-  });
-
-  document.getElementById('toggle-iso20').addEventListener('change', function() {
-    toggleIsoLayer('iso20', this.checked);
-  });
-
-  document.getElementById('toggle-iso30').addEventListener('change', function() {
-    toggleIsoLayer('iso30', this.checked);
-  });
-
-  function toggleIsoLayer(key, show) {
-    if (show) {
-      map.addLayer(layers[key]);
-    } else {
-      map.removeLayer(layers[key]);
-    }
+    updateStats();
   }
 
-  function updateIsoVisibility() {
-    // This keeps isochrone layers synced, no extra filtering needed
-    // since they're independent layer groups
+  // ─── Toggle iso band globally ───
+  function toggleIso(isoKey, enabled) {
+    isoVisible[isoKey] = enabled;
+    Object.values(pinState).forEach(state => {
+      if (!state.enabled) return;
+      const layer = state.isoLayers[isoKey];
+      if (!layer) return;
+      if (enabled) layer.addTo(map);
+      else map.removeLayer(layer);
+    });
   }
 
-  // Style the toggle sliders with correct colors
-  const style = document.createElement('style');
-  style.textContent = `
-    #toggle-vmer:checked + .toggle-slider { background: ${COLORS.vmer} !important; }
-    #toggle-iso10:checked + .toggle-slider { background: ${COLORS.iso10} !important; }
-    #toggle-iso20:checked + .toggle-slider { background: ${COLORS.iso20} !important; }
-    #toggle-iso30:checked + .toggle-slider { background: ${COLORS.iso30} !important; }
-    .marker-tooltip {
-      background: #1a1c24 !important;
-      color: #e2e4ea !important;
-      border: 1px solid #2a2d38 !important;
-      border-radius: 4px !important;
-      font-size: 11px !important;
-      font-weight: 600 !important;
-      padding: 2px 8px !important;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+  // ─── Update stats ───
+  function updateStats() {
+    let aemActive = 0, vmerActive = 0;
+    Object.values(pinState).forEach(s => {
+      if (s.enabled) {
+        if (s.layerType === 'aem') aemActive++;
+        else vmerActive++;
+      }
+    });
+    document.getElementById('stat-active').textContent = aemActive + vmerActive;
+    document.getElementById('stat-aem').textContent = aemActive;
+    document.getElementById('stat-vmer').textContent = vmerActive;
+  }
+
+  // ─── Build sidebar pin list ───
+  function buildPinList() {
+    const container = document.getElementById('pinList');
+
+    const groups = [
+      { id: 'aem', label: 'AEM CODU Centro', color: COLORS.aem, data: ISOCHRONE_DATA.aem_codu_centro, type: 'aem' },
+      { id: 'vmer', label: 'VMER DRC', color: COLORS.vmer, data: ISOCHRONE_DATA.vmer_drc, type: 'vmer' },
+    ];
+
+    groups.forEach(group => {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'layer-group';
+
+      // Header
+      const header = document.createElement('div');
+      header.className = 'layer-header';
+      header.innerHTML = `
+        <span class="layer-dot" style="background: ${group.color}"></span>
+        <span class="layer-name">${group.label}</span>
+        <span class="layer-count">${group.data.length}</span>
+        <button class="layer-toggle-all" data-group="${group.id}" data-state="on">Todos</button>
+      `;
+      groupEl.appendChild(header);
+
+      // Toggle all button
+      const toggleAllBtn = header.querySelector('.layer-toggle-all');
+      toggleAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentState = toggleAllBtn.dataset.state;
+        const newEnabled = currentState === 'off';
+        toggleAllBtn.dataset.state = newEnabled ? 'on' : 'off';
+        toggleAllBtn.textContent = newEnabled ? 'Todos' : 'Nenhum';
+
+        group.data.forEach(pin => {
+          const key = `${group.type}_${pin.name}`;
+          togglePin(key, newEnabled);
+          const checkbox = document.querySelector(`[data-pin-key="${key}"] .pin-checkbox`);
+          if (checkbox) {
+            checkbox.classList.toggle('checked', newEnabled);
+          }
+          const item = document.querySelector(`[data-pin-key="${key}"]`);
+          if (item) item.classList.toggle('enabled', newEnabled);
+        });
+      });
+
+      // Pin items
+      group.data.forEach(pin => {
+        const key = `${group.type}_${pin.name}`;
+        const item = document.createElement('div');
+        item.className = 'pin-item enabled';
+        item.dataset.pinKey = key;
+        item.innerHTML = `
+          <div class="pin-checkbox checked" style="background: ${pinState[key].enabled ? group.color : 'transparent'}">
+            <svg class="check-icon" viewBox="0 0 10 10">
+              <polyline points="1.5 5 4 7.5 8.5 2.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="pin-name">${pin.name}</span>
+          <div class="pin-locate" title="Centrar no mapa">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+          </div>
+        `;
+
+        // Click checkbox to toggle
+        const checkbox = item.querySelector('.pin-checkbox');
+        checkbox.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isEnabled = checkbox.classList.contains('checked');
+          checkbox.classList.toggle('checked', !isEnabled);
+          checkbox.style.background = !isEnabled ? group.color : 'transparent';
+          item.classList.toggle('enabled', !isEnabled);
+          togglePin(key, !isEnabled);
+        });
+
+        // Click name to fly to pin
+        item.querySelector('.pin-name').addEventListener('click', () => {
+          map.flyTo([pin.lat, pin.lon], 12, { duration: 0.8 });
+          pinState[key].marker.openPopup();
+        });
+
+        // Click locate icon
+        item.querySelector('.pin-locate').addEventListener('click', (e) => {
+          e.stopPropagation();
+          map.flyTo([pin.lat, pin.lon], 12, { duration: 0.8 });
+          pinState[key].marker.openPopup();
+        });
+
+        groupEl.appendChild(item);
+      });
+
+      container.appendChild(groupEl);
+    });
+  }
+
+  buildPinList();
+
+  // ─── Iso button toggles ───
+  ['10', '20', '30'].forEach(key => {
+    const btn = document.getElementById(`btn-iso-${key}`);
+    btn.addEventListener('click', () => {
+      const isActive = btn.classList.contains(`active-${key}`);
+      btn.classList.toggle(`active-${key}`, !isActive);
+      toggleIso(key, !isActive);
+    });
+  });
+
+  // ─── Mobile sidebar toggle ───
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('open');
+  });
+
+  // Close sidebar when clicking map on mobile
+  document.getElementById('map').addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      document.getElementById('sidebar').classList.remove('open');
     }
-    .marker-tooltip::before {
-      border-top-color: #1a1c24 !important;
-    }
-  `;
-  document.head.appendChild(style);
+  });
 
 })();
 </script>
