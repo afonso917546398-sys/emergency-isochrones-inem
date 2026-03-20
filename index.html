@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Isócronas de Emergência — INEM Região Centro</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1c24;
+    --surface-hover: #22252f;
+    --border: #2a2d38;
+    --text: #e2e4ea;
+    --text-muted: #8b8fa3;
+    --text-faint: #565a6e;
+    --aem-color: #3b82f6;
+    --vmer-color: #f59e0b;
+    --iso-10: #ef4444;
+    --iso-20: #f59e0b;
+    --iso-30: #22c55e;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #map {
+    width: 100%;
+    height: 100vh;
+  }
+
+  /* Dark Leaflet tiles */
+  .leaflet-container { background: #0f1117; }
+
+  /* Control panel */
+  .control-panel {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 1000;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    width: 280px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+  }
+
+  .control-panel::-webkit-scrollbar { width: 4px; }
+  .control-panel::-webkit-scrollbar-track { background: transparent; }
+  .control-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .panel-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+
+  .panel-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    line-height: 1.4;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+    margin-top: 16px;
+  }
+
+  .section-label:first-of-type { margin-top: 0; }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .toggle-row:hover { opacity: 0.85; }
+
+  .toggle-switch {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 10px;
+    transition: background 0.2s;
+    cursor: pointer;
+  }
+
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 2px;
+    top: 2px;
+    background: var(--text);
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle-switch input:checked + .toggle-slider {
+    background: var(--aem-color);
+  }
+
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+  }
+
+  .toggle-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .layer-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Isochrone legend */
+  .iso-legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+
+  .iso-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .iso-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    opacity: 0.7;
+  }
+
+  /* Pin counter */
+  .pin-count {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 20px;
+    display: flex;
+    gap: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+
+  .stat {
+    text-align: center;
+  }
+
+  .stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Popup styles */
+  .leaflet-popup-content-wrapper {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+  }
+
+  .leaflet-popup-tip { background: var(--surface) !important; }
+
+  .leaflet-popup-content {
+    margin: 12px 14px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif !important;
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+  }
+
+  .popup-name {
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  .popup-type {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  .popup-coords {
+    font-size: 10px;
+    color: var(--text-faint);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .leaflet-popup-close-button {
+    color: var(--text-muted) !important;
+  }
+
+  /* Note */
+  .method-note {
+    margin-top: 16px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--text-faint);
+  }
+
+  .method-note strong {
+    color: var(--text-muted);
+  }
+
+  /* Attribution */
+  .attribution {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    z-index: 1000;
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+
+  .attribution a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+
+  .attribution a:hover { text-decoration: underline; }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .control-panel {
+      top: auto;
+      bottom: 70px;
+      right: 8px;
+      left: 8px;
+      width: auto;
+      max-height: 40vh;
+    }
+    .stats-bar {
+      bottom: 8px;
+      gap: 16px;
+      padding: 8px 14px;
+    }
+    .stat-value { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Control Panel -->
+<div class="control-panel">
+  <div class="panel-title">Isócronas de Emergência</div>
+  <div class="panel-subtitle">INEM — Região Centro (CODU Centro)</div>
+
+  <div class="section-label">Camadas</div>
+
+  <label class="toggle-row">
+    <div class="toggle-switch">
+      <input type="checkbox" id="toggle-aem" checked>
+      <span class="toggle-slider"></span>
+    </div>
+    <span class="layer-dot" style="background: var(--aem-color)"></span>
+    <span class="toggle-label">AEM CODU Centro <span class="pin-count">(20)</span></span>
+  </label>
+
+  <label class="toggle-row">
+    <div class="toggle-switch">
+      <input type="checkbox" id="toggle-vmer" checked>
+      <span class="toggle-slider" style=""></span>
+    </div>
+    <span class="layer-dot" style="background: var(--vmer-color)"></span>
+    <span class="toggle-label">VMER DRC <span class="pin-count">(10)</span></span>
+  </label>
+
+  <div class="section-label">Isócronas</div>
+
+  <label class="toggle-row">
+    <div class="toggle-switch">
+      <input type="checkbox" id="toggle-iso10" checked>
+      <span class="toggle-slider" style=""></span>
+    </div>
+    <span class="toggle-label">10 minutos</span>
+  </label>
+
+  <label class="toggle-row">
+    <div class="toggle-switch">
+      <input type="checkbox" id="toggle-iso20" checked>
+      <span class="toggle-slider" style=""></span>
+    </div>
+    <span class="toggle-label">20 minutos</span>
+  </label>
+
+  <label class="toggle-row">
+    <div class="toggle-switch">
+      <input type="checkbox" id="toggle-iso30" checked>
+      <span class="toggle-slider" style=""></span>
+    </div>
+    <span class="toggle-label">30 minutos</span>
+  </label>
+
+  <div class="iso-legend">
+    <div class="iso-item">
+      <div class="iso-swatch" style="background: var(--iso-10)"></div>
+      10 min
+    </div>
+    <div class="iso-item">
+      <div class="iso-swatch" style="background: var(--iso-20)"></div>
+      20 min
+    </div>
+    <div class="iso-item">
+      <div class="iso-swatch" style="background: var(--iso-30)"></div>
+      30 min
+    </div>
+  </div>
+
+  <div class="method-note">
+    <strong>Metodologia:</strong> Isócronas calculadas via Valhalla (OpenStreetMap) com multiplicador de 1.3x na velocidade para simular condução de emergência (luzes/sirenes). Ambulâncias em missão urgente circulam ~30% acima dos limites normais de velocidade (Pappinen & Nordquist, 2022).
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-value">30</div>
+    <div class="stat-label">Meios</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">20</div>
+    <div class="stat-label">AEM</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value">10</div>
+    <div class="stat-label">VMER</div>
+  </div>
+</div>
+
+<div class="attribution">
+  <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">Created with Perplexity Computer</a>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script>
+<script>
+(function() {
+  // Initialize map centered on Região Centro
+  const map = L.map('map', {
+    center: [40.25, -8.2],
+    zoom: 8,
+    zoomControl: false,
+    attributionControl: false
+  });
+
+  // Dark tile layer
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+  // Color config
+  const COLORS = {
+    aem: '#3b82f6',
+    vmer: '#f59e0b',
+    iso10: '#ef4444',
+    iso20: '#f59e0b',
+    iso30: '#22c55e'
+  };
+
+  // Layer groups
+  const layers = {
+    aemMarkers: L.layerGroup().addTo(map),
+    vmerMarkers: L.layerGroup().addTo(map),
+    iso10: L.layerGroup().addTo(map),
+    iso20: L.layerGroup().addTo(map),
+    iso30: L.layerGroup().addTo(map)
+  };
+
+  // Custom marker icons
+  function createIcon(color, size) {
+    return L.divIcon({
+      className: '',
+      html: `<div style="
+        width: ${size}px;
+        height: ${size}px;
+        background: ${color};
+        border: 2px solid rgba(255,255,255,0.9);
+        border-radius: 50%;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 3px ${color}33;
+      "></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size/2, size/2]
+    });
+  }
+
+  // Add isochrone polygons
+  function addIsochrones(pin, layerType) {
+    const isoConfig = [
+      { key: '30', color: COLORS.iso30, group: layers.iso30, opacity: 0.08 },
+      { key: '20', color: COLORS.iso20, group: layers.iso20, opacity: 0.12 },
+      { key: '10', color: COLORS.iso10, group: layers.iso10, opacity: 0.18 },
+    ];
+
+    isoConfig.forEach(cfg => {
+      const geom = pin.isochrones[cfg.key];
+      if (!geom) return;
+
+      const poly = L.geoJSON(geom, {
+        style: {
+          color: cfg.color,
+          weight: 1.5,
+          opacity: 0.5,
+          fillColor: cfg.color,
+          fillOpacity: cfg.opacity,
+          dashArray: cfg.key === '30' ? '6 4' : null
+        }
+      });
+
+      poly._pinName = pin.name;
+      poly._layerType = layerType;
+      cfg.group.addLayer(poly);
+    });
+  }
+
+  // Add markers and isochrones for each pin
+  function addPin(pin, layerType) {
+    const color = layerType === 'aem' ? COLORS.aem : COLORS.vmer;
+    const markerGroup = layerType === 'aem' ? layers.aemMarkers : layers.vmerMarkers;
+    const typeLabel = layerType === 'aem' ? 'AEM CODU Centro' : 'VMER DRC';
+
+    const marker = L.marker([pin.lat, pin.lon], {
+      icon: createIcon(color, 12)
+    });
+
+    marker.bindPopup(`
+      <div class="popup-name" style="color: ${color}">${pin.name}</div>
+      <div class="popup-type">${typeLabel}</div>
+      <div class="popup-coords">${pin.lat.toFixed(6)}, ${pin.lon.toFixed(6)}</div>
+    `);
+
+    marker.bindTooltip(pin.name, {
+      permanent: false,
+      direction: 'top',
+      offset: [0, -10],
+      className: 'marker-tooltip'
+    });
+
+    markerGroup.addLayer(marker);
+    addIsochrones(pin, layerType);
+  }
+
+  // Populate map
+  ISOCHRONE_DATA.aem_codu_centro.forEach(pin => addPin(pin, 'aem'));
+  ISOCHRONE_DATA.vmer_drc.forEach(pin => addPin(pin, 'vmer'));
+
+  // Toggle controls
+  document.getElementById('toggle-aem').addEventListener('change', function() {
+    if (this.checked) {
+      map.addLayer(layers.aemMarkers);
+    } else {
+      map.removeLayer(layers.aemMarkers);
+    }
+    updateIsoVisibility();
+  });
+
+  document.getElementById('toggle-vmer').addEventListener('change', function() {
+    if (this.checked) {
+      map.addLayer(layers.vmerMarkers);
+    } else {
+      map.removeLayer(layers.vmerMarkers);
+    }
+    updateIsoVisibility();
+  });
+
+  document.getElementById('toggle-iso10').addEventListener('change', function() {
+    toggleIsoLayer('iso10', this.checked);
+  });
+
+  document.getElementById('toggle-iso20').addEventListener('change', function() {
+    toggleIsoLayer('iso20', this.checked);
+  });
+
+  document.getElementById('toggle-iso30').addEventListener('change', function() {
+    toggleIsoLayer('iso30', this.checked);
+  });
+
+  function toggleIsoLayer(key, show) {
+    if (show) {
+      map.addLayer(layers[key]);
+    } else {
+      map.removeLayer(layers[key]);
+    }
+  }
+
+  function updateIsoVisibility() {
+    // This keeps isochrone layers synced, no extra filtering needed
+    // since they're independent layer groups
+  }
+
+  // Style the toggle sliders with correct colors
+  const style = document.createElement('style');
+  style.textContent = `
+    #toggle-vmer:checked + .toggle-slider { background: ${COLORS.vmer} !important; }
+    #toggle-iso10:checked + .toggle-slider { background: ${COLORS.iso10} !important; }
+    #toggle-iso20:checked + .toggle-slider { background: ${COLORS.iso20} !important; }
+    #toggle-iso30:checked + .toggle-slider { background: ${COLORS.iso30} !important; }
+    .marker-tooltip {
+      background: #1a1c24 !important;
+      color: #e2e4ea !important;
+      border: 1px solid #2a2d38 !important;
+      border-radius: 4px !important;
+      font-size: 11px !important;
+      font-weight: 600 !important;
+      padding: 2px 8px !important;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+    }
+    .marker-tooltip::before {
+      border-top-color: #1a1c24 !important;
+    }
+  `;
+  document.head.appendChild(style);
+
+})();
+</script>
+</body>
+</html>
