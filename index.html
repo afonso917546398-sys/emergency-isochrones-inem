@@ -36,6 +36,7 @@
     --iso-10: #ef4444;
     --iso-20: #f59e0b;
     --iso-30: #22c55e;
+    --iso-60: #6366f1;
     --panel-width: 320px;
   }
 
@@ -224,10 +225,17 @@
     color: var(--iso-30);
   }
 
+  .iso-btn.active-60 {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: var(--iso-60);
+    color: var(--iso-60);
+  }
+
   .iso-btn:hover { background: var(--surface-hover); }
   .iso-btn.active-10:hover { background: rgba(239, 68, 68, 0.22); }
   .iso-btn.active-20:hover { background: rgba(245, 158, 11, 0.22); }
   .iso-btn.active-30:hover { background: rgba(34, 197, 94, 0.22); }
+  .iso-btn.active-60:hover { background: rgba(99, 102, 241, 0.22); }
 
   /* Pin list */
   .pin-list-container {
@@ -563,9 +571,10 @@
   <div class="global-controls">
     <div class="section-label">Tempos de resposta</div>
     <div class="iso-toggles">
-      <button class="iso-btn active-10" data-iso="10" id="btn-iso-10">10 min</button>
-      <button class="iso-btn active-20" data-iso="20" id="btn-iso-20">20 min</button>
-      <button class="iso-btn active-30" data-iso="30" id="btn-iso-30">30 min</button>
+      <button class="iso-btn active-10" data-iso="10" id="btn-iso-10">10</button>
+      <button class="iso-btn active-20" data-iso="20" id="btn-iso-20">20</button>
+      <button class="iso-btn active-30" data-iso="30" id="btn-iso-30">30</button>
+      <button class="iso-btn active-60" data-iso="60" id="btn-iso-60">60</button>
     </div>
   </div>
 
@@ -629,12 +638,13 @@
     vmer: '#f59e0b',
     iso10: '#ef4444',
     iso20: '#f59e0b',
-    iso30: '#22c55e'
+    iso30: '#22c55e',
+    iso60: '#6366f1'
   };
 
   // ─── State ───
   const pinState = {}; // key -> { enabled, marker, isoLayers: { '10': L.geoJSON, '20': ..., '30': ... } }
-  const isoVisible = { '10': true, '20': true, '30': true };
+  const isoVisible = { '10': true, '20': true, '30': true, '60': true };
 
   // ─── Helpers ───
   function createIcon(color, size) {
@@ -684,6 +694,7 @@
 
     const isoLayers = {};
     const isoConfig = [
+      { key: '60', color: COLORS.iso60, opacity: 0.06, dashed: true },
       { key: '30', color: COLORS.iso30, opacity: 0.12, dashed: true },
       { key: '20', color: COLORS.iso20, opacity: 0.18, dashed: false },
       { key: '10', color: COLORS.iso10, opacity: 0.25, dashed: false },
@@ -845,7 +856,7 @@
   buildPinList();
 
   // ─── Iso button toggles ───
-  ['10', '20', '30'].forEach(key => {
+  ['10', '20', '30', '60'].forEach(key => {
     const btn = document.getElementById(`btn-iso-${key}`);
     btn.addEventListener('click', () => {
       const isActive = btn.classList.contains(`active-${key}`);
