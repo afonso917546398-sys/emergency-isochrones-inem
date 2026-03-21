@@ -633,8 +633,17 @@
     await showRoute(fromLat, fromLon, toLat, toLon, '#3b82f6');
   };
 
-  const EMERGENCY_SPEED_FACTOR = 1.3; // Emergency vehicles are ~30% faster
+  const EMERGENCY_SPEED_FACTOR = 1.3;
   const VALHALLA_ROUTE_URL = 'https://valhalla1.openstreetmap.de/route';
+
+  // Conservative distance-based fallback ETA
+  function fallbackETA(fromLat, fromLon, toLat, toLon) {
+    const dlat = fromLat - toLat;
+    const dlon = fromLon - toLon;
+    const straightKm = Math.sqrt(dlat * dlat + dlon * dlon) * 111;
+    const roadKm = straightKm * 1.6;
+    return Math.round(roadKm / (50 / 60));
+  }
 
   // Get ETA between two points via Valhalla with retry + fallback
   // Returns { minutes, estimated } where estimated=true means fallback was used
@@ -834,38 +843,89 @@
     map.flyTo([lat, lon], 11, { duration: 0.8 });
     searchMarker.openPopup();
 
-    // Calculate ETAs with concurrency limit (2 at a time to avoid 429s)
-    async function batchETA(tasks, concurrency) {
-      const results = [];
-      let i = 0;
-      async function next() {
-        const idx = i++;
-        if (idx >= tasks.length) return;
-        results[idx] = await tasks[idx]();
-        await next();
-      }
-      await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => next()));
-      return results;
-    }
-
-    const etaTasks = reaching.map((state) => async () => {
-      const etaResult = await getETA(state.pin.lat, state.pin.lon, lat, lon);
-      return { name: state.pin.name, originalName: state.pin.name, layerType: state.layerType, subGroup: state.subGroup, bestBand: state._bestBand, eta: etaResult.minutes, estimated: etaResult.estimated, pinLat: state.pin.lat, pinLon: state.pin.lon };
-    });
-
+    // Use Valhalla Matrix API: one request for all vehicle→destination ETAs
     const closest3 = findClosest3Hospitals(lat, lon);
 
-    const hospitalTasks = closest3.map((h) => async () => {
-      const etaResult = await getETA(lat, lon, h.lat, h.lon);
-      return { ...h, eta: etaResult.minutes, estimated: etaResult.estimated };
-    });
+    let etaResults = [];
+    let hospitalETAs = [];
 
-    // Run all ETAs with max 2 concurrent requests
-    const allTasks = [...etaTasks, ...hospitalTasks];
-    const allResults = await batchETA(allTasks, 2);
+    // Build matrix request: sources = reaching vehicles, targets = [searchPoint]
+    // Plus: sources = [searchPoint], targets = closest 3 hospitals
+    try {
+      // 1) Vehicles → search point
+      if (reaching.length > 0) {
+        const vSources = reaching.map(s => ({ lat: s.pin.lat, lon: s.pin.lon }));
+        const vTargets = [{ lat, lon }];
+        const vPayload = { sources: vSources, targets: vTargets, costing: 'auto' };
+        const vResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(vPayload)
+        });
+        if (vResp.ok) {
+          const vData = await vResp.json();
+          const rows = vData.sources_to_targets || [];
+          etaResults = reaching.map((state, i) => {
+            const t = rows[i]?.[0]?.time;
+            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+            return {
+              name: state.pin.name, originalName: state.pin.name,
+              layerType: state.layerType, subGroup: state.subGroup,
+              bestBand: state._bestBand,
+              eta: mins ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+              estimated: mins === null,
+              pinLat: state.pin.lat, pinLon: state.pin.lon
+            };
+          });
+        } else {
+          throw new Error('Matrix API failed');
+        }
+      }
 
-    const etaResults = allResults.slice(0, etaTasks.length);
-    const hospitalETAs = allResults.slice(etaTasks.length);
+      // 2) Search point → hospitals
+      if (closest3.length > 0) {
+        const hSources = [{ lat, lon }];
+        const hTargets = closest3.map(h => ({ lat: h.lat, lon: h.lon }));
+        const hPayload = { sources: hSources, targets: hTargets, costing: 'auto' };
+        const hResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(hPayload)
+        });
+        if (hResp.ok) {
+          const hData = await hResp.json();
+          const row = hData.sources_to_targets?.[0] || [];
+          hospitalETAs = closest3.map((h, i) => {
+            const t = row[i]?.time;
+            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+            return {
+              ...h,
+              eta: mins ?? fallbackETA(lat, lon, h.lat, h.lon),
+              estimated: mins === null
+            };
+          });
+        } else {
+          throw new Error('Hospital matrix failed');
+        }
+      }
+    } catch (e) {
+      // Fallback: estimate all from distance
+      if (etaResults.length === 0) {
+        etaResults = reaching.map(state => ({
+          name: state.pin.name, originalName: state.pin.name,
+          layerType: state.layerType, subGroup: state.subGroup,
+          bestBand: state._bestBand,
+          eta: fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+          estimated: true,
+          pinLat: state.pin.lat, pinLon: state.pin.lon
+        }));
+      }
+      if (hospitalETAs.length === 0) {
+        hospitalETAs = closest3.map(h => ({
+          ...h,
+          eta: fallbackETA(lat, lon, h.lat, h.lon),
+          estimated: true
+        }));
+      }
+    }
 
     etaResults.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
     hospitalETAs.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
