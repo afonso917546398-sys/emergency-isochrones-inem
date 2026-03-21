@@ -1060,6 +1060,7 @@
       searchFilterActive = false;
     }
     lastSearchData = null;
+    clearRoute();
   });
 
   // Close results when clicking outside
@@ -1156,6 +1157,89 @@
 
   let searchFilterActive = false;
   let lastSearchData = null; // stores { lat, lon, name, etaResults, hospitalETAs, bandSummary, reaching }
+  let activeRouteLayer = null; // current route polyline on map
+
+  // Fetch route shape from Valhalla and draw on map
+  async function showRoute(fromLat, fromLon, toLat, toLon, color) {
+    // Remove previous route
+    if (activeRouteLayer) { map.removeLayer(activeRouteLayer); activeRouteLayer = null; }
+
+    try {
+      const payload = {
+        locations: [
+          { lat: fromLat, lon: fromLon },
+          { lat: toLat, lon: toLon }
+        ],
+        costing: 'auto',
+        units: 'km',
+        shape_format: 'polyline6'
+      };
+      const resp = await fetch(VALHALLA_ROUTE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) { drawStraightLine(fromLat, fromLon, toLat, toLon, color); return; }
+      const data = await resp.json();
+      const shape = data.trip?.legs?.[0]?.shape;
+      if (!shape) { drawStraightLine(fromLat, fromLon, toLat, toLon, color); return; }
+
+      // Decode polyline6
+      const coords = decodePolyline6(shape);
+      activeRouteLayer = L.polyline(coords, {
+        color: color || '#3b82f6',
+        weight: 4,
+        opacity: 0.85,
+        dashArray: null,
+        lineCap: 'round',
+        lineJoin: 'round'
+      }).addTo(map);
+
+      // Fit map to show entire route
+      map.fitBounds(activeRouteLayer.getBounds(), { padding: [60, 60] });
+    } catch {
+      drawStraightLine(fromLat, fromLon, toLat, toLon, color);
+    }
+  }
+
+  // Fallback: straight dashed line if routing fails
+  function drawStraightLine(fromLat, fromLon, toLat, toLon, color) {
+    if (activeRouteLayer) { map.removeLayer(activeRouteLayer); activeRouteLayer = null; }
+    activeRouteLayer = L.polyline(
+      [[fromLat, fromLon], [toLat, toLon]],
+      { color: color || '#3b82f6', weight: 3, opacity: 0.6, dashArray: '8 6' }
+    ).addTo(map);
+    map.fitBounds(activeRouteLayer.getBounds(), { padding: [60, 60] });
+  }
+
+  // Decode Valhalla polyline6 format
+  function decodePolyline6(encoded) {
+    const coords = [];
+    let lat = 0, lon = 0, i = 0;
+    while (i < encoded.length) {
+      let shift = 0, result = 0, byte;
+      do { byte = encoded.charCodeAt(i++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do { byte = encoded.charCodeAt(i++) - 63; result |= (byte & 0x1f) << shift; shift += 5; } while (byte >= 0x20);
+      lon += (result & 1) ? ~(result >> 1) : (result >> 1);
+      coords.push([lat / 1e6, lon / 1e6]);
+    }
+    return coords;
+  }
+
+  // Clear route
+  function clearRoute() {
+    if (activeRouteLayer) { map.removeLayer(activeRouteLayer); activeRouteLayer = null; }
+  }
+
+  // Global handler for popup route clicks
+  window._showRouteFromPin = async function(fromLat, fromLon, toLat, toLon, color) {
+    await showRoute(fromLat, fromLon, toLat, toLon, color);
+  };
+  window._showRouteToHospital = async function(fromLat, fromLon, toLat, toLon) {
+    await showRoute(fromLat, fromLon, toLat, toLon, '#16a34a');
+  };
 
   const EMERGENCY_SPEED_FACTOR = 1.3; // Emergency vehicles are ~30% faster
   const VALHALLA_ROUTE_URL = 'https://valhalla1.openstreetmap.de/route';
@@ -1279,7 +1363,8 @@
         const etaStr = `<strong style="color:${etaColor}">${r.eta} min</strong>${r.estimated ? '<span style="font-size:8px;color:#ef4444;margin-left:3px;" title="Estimativa baseada em dist\u00e2ncia linear \u2014 API indispon\u00edvel">\u26A0 est.</span>' : ''}`;
         const bandColor = bandColors[r.bestBand] || '#565a6e';
         const bandBadge = `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:${bandColor}22;color:${bandColor};margin-left:4px;">${r.bestBand}'</span>`;
-        etaHtml += `<tr><td style="padding:2px 0;"><span style="color:${color};font-weight:600;">${r.name}</span>${bandBadge}</td><td style="padding:2px 0;text-align:right;">${etaStr}</td></tr>`;
+        const clickFn = `_showRouteFromPin(${r.pinLat},${r.pinLon},${lat},${lon},'${color}')`;
+        etaHtml += `<tr onclick="${clickFn}" style="cursor:pointer;border-radius:4px;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'"><td style="padding:3px 2px;"><span style="color:${color};font-weight:600;">${r.name}</span>${bandBadge}</td><td style="padding:3px 2px;text-align:right;">${etaStr}</td></tr>`;
       });
       etaHtml += '</table></div>';
     } else {
@@ -1295,7 +1380,8 @@
         const etaColor = h.estimated ? '#ef4444' : '#e2e4ea';
         const etaStr = `<strong style="color:${etaColor}">${h.eta} min</strong>${h.estimated ? '<span style="font-size:8px;color:#ef4444;margin-left:3px;" title="Estimativa baseada em dist\u00e2ncia linear \u2014 API indispon\u00edvel">\u26A0 est.</span>' : ''}`;
         const distStr = `<span style="font-size:9px;color:#565a6e;margin-left:4px;">${h.dist.toFixed(0)}km</span>`;
-        hospitalHtml += `<tr><td style="padding:2px 0;"><span style="color:#16a34a;font-weight:bold;">H</span> <span style="color:#e2e4ea;">${h.name}</span>${distStr}</td><td style="padding:2px 0;text-align:right;white-space:nowrap;">${etaStr}</td></tr>`;
+        const clickFn = `_showRouteToHospital(${lat},${lon},${h.lat},${h.lon})`;
+        hospitalHtml += `<tr onclick="${clickFn}" style="cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'"><td style="padding:3px 2px;"><span style="color:#16a34a;font-weight:bold;">H</span> <span style="color:#e2e4ea;">${h.name}</span>${distStr}</td><td style="padding:3px 2px;text-align:right;white-space:nowrap;">${etaStr}</td></tr>`;
       });
       hospitalHtml += '</table></div>';
     }
@@ -1354,7 +1440,7 @@
     // Calculate ETAs from reaching pins (in parallel, batched)
     const etaPromises = reaching.map(async (state) => {
       const etaResult = await getETA(state.pin.lat, state.pin.lon, lat, lon);
-      return { name: state.pin.name, originalName: state.pin.name, layerType: state.layerType, subGroup: state.subGroup, bestBand: state._bestBand, eta: etaResult.minutes, estimated: etaResult.estimated };
+      return { name: state.pin.name, originalName: state.pin.name, layerType: state.layerType, subGroup: state.subGroup, bestBand: state._bestBand, eta: etaResult.minutes, estimated: etaResult.estimated, pinLat: state.pin.lat, pinLon: state.pin.lon };
     });
 
     // Find closest 3 hospitals from our data
