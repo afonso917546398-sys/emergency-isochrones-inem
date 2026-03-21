@@ -648,10 +648,10 @@
       units: 'km'
     };
 
-    // Try up to 2 times
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // Try up to 3 times with increasing delay
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        if (attempt > 0) await new Promise(r => setTimeout(r, 2000));
+        if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
         const resp = await fetch(VALHALLA_ROUTE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -665,12 +665,14 @@
       } catch { /* retry */ }
     }
 
-    // Fallback: estimate from straight-line distance
+    // Fallback: conservative estimate from straight-line distance
+    // Roads are typically 1.4-1.8x longer than straight line (use 1.6x)
+    // Emergency avg speed ~50 km/h (accounts for urban, rural, mountain mix)
     const dlat = fromLat - toLat;
     const dlon = fromLon - toLon;
     const straightKm = Math.sqrt(dlat * dlat + dlon * dlon) * 111;
-    const roadKm = straightKm * 1.3;
-    const avgSpeedKmMin = 80 / 60;
+    const roadKm = straightKm * 1.6;
+    const avgSpeedKmMin = 50 / 60; // 50 km/h in km/min
     return { minutes: Math.round(roadKm / avgSpeedKmMin), estimated: true };
   }
 
@@ -832,27 +834,40 @@
     map.flyTo([lat, lon], 11, { duration: 0.8 });
     searchMarker.openPopup();
 
-    // Calculate ETAs from reaching pins (in parallel, batched)
-    const etaPromises = reaching.map(async (state) => {
+    // Calculate ETAs with concurrency limit (2 at a time to avoid 429s)
+    async function batchETA(tasks, concurrency) {
+      const results = [];
+      let i = 0;
+      async function next() {
+        const idx = i++;
+        if (idx >= tasks.length) return;
+        results[idx] = await tasks[idx]();
+        await next();
+      }
+      await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => next()));
+      return results;
+    }
+
+    const etaTasks = reaching.map((state) => async () => {
       const etaResult = await getETA(state.pin.lat, state.pin.lon, lat, lon);
       return { name: state.pin.name, originalName: state.pin.name, layerType: state.layerType, subGroup: state.subGroup, bestBand: state._bestBand, eta: etaResult.minutes, estimated: etaResult.estimated, pinLat: state.pin.lat, pinLon: state.pin.lon };
     });
 
-    // Find closest 3 hospitals from our data
     const closest3 = findClosest3Hospitals(lat, lon);
 
-    // Wait for ETA results
-    const etaResults = await Promise.all(etaPromises);
-
-    // Sort ETAs by time
-    etaResults.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
-
-    // Calculate ETAs from search point to closest 3 hospitals (in parallel)
-    const hospitalETAPromises = closest3.map(async (h) => {
+    const hospitalTasks = closest3.map((h) => async () => {
       const etaResult = await getETA(lat, lon, h.lat, h.lon);
       return { ...h, eta: etaResult.minutes, estimated: etaResult.estimated };
     });
-    const hospitalETAs = await Promise.all(hospitalETAPromises);
+
+    // Run all ETAs with max 2 concurrent requests
+    const allTasks = [...etaTasks, ...hospitalTasks];
+    const allResults = await batchETA(allTasks, 2);
+
+    const etaResults = allResults.slice(0, etaTasks.length);
+    const hospitalETAs = allResults.slice(etaTasks.length);
+
+    etaResults.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
     hospitalETAs.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
 
     // Toggle: hide all hospitals, show only the closest 3
