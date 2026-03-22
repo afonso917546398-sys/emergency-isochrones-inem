@@ -99,10 +99,7 @@
     pinState[key] = { enabled: initialEnabled, userEnabled: initialEnabled, marker, isoLayers, layerType, subGroup, pin };
   }
 
-  ISOCHRONE_DATA.aem_codu_centro.forEach(p => {
-    const isAEM = p.name.startsWith('AE') || p.name.startsWith('HI');
-    addPin(p, 'aem', !isAEM); // AEM starts disabled, SIV starts enabled
-  });
+  ISOCHRONE_DATA.aem_codu_centro.forEach(p => addPin(p, 'aem'));
   ISOCHRONE_DATA.vmer_drc.forEach(p => addPin(p, 'vmer'));
 
   // ─── Hospital pins ───
@@ -339,12 +336,6 @@
         });
       });
 
-      // Set toggle-all button initial state based on group
-      if (group.id === 'aem') {
-        toggleAllBtn.dataset.state = 'off';
-        toggleAllBtn.textContent = 'Nenhum';
-      }
-
       // Pin items
       group.data.forEach(pin => {
         const key = `${group.type}_${pin.name}`;
@@ -527,18 +518,7 @@
       searchMarker = null;
     }
     if (searchFilterActive) {
-      // Restore pins to user's toggle state
-      Object.entries(pinState).forEach(([key, state]) => {
-        togglePin(key, state.userEnabled);
-        const item = document.querySelector(`[data-pin-key="${key}"]`);
-        if (item) {
-          const cb = item.querySelector('.pin-checkbox');
-          const color = state.subGroup === 'vmer' ? COLORS.vmer : state.subGroup === 'siv' ? '#10b981' : COLORS.aem;
-          cb.classList.toggle('checked', state.userEnabled);
-          cb.style.background = state.userEnabled ? color : 'transparent';
-          item.classList.toggle('enabled', state.userEnabled);
-        }
-      });
+      restoreAllPins();
       restoreAllHospitals();
       searchFilterActive = false;
     }
@@ -592,8 +572,7 @@
     const reaching = []; // pins that reach within ANY time band
 
     Object.entries(pinState).forEach(([key, state]) => {
-      // Only include pins the user has enabled (respects AEM off, individual toggles, etc.)
-      if (!state.userEnabled) return;
+
 
       // Check all time bands
       let bestBand = null;
