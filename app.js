@@ -866,17 +866,14 @@
       etaHtml += '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#565a6e;margin-bottom:4px;">ETA meios (emerg\u00eancia)</div>';
       etaHtml += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
       const bandColors = {'10':'#22c55e','20':'#eab308','30':'#f97316','60':'#ef4444'};
-      activeETAs.forEach((r, idx) => {
+      activeETAs.forEach(r => {
         const color = r.subGroup === 'vmer' ? '#f59e0b' : r.subGroup === 'siv' ? '#10b981' : '#3b82f6';
         const etaColor = r.estimated ? '#ef4444' : '#e2e4ea';
         const etaStr = `<strong style="color:${etaColor}">${r.eta} min</strong>${r.estimated ? '<span style="font-size:8px;color:#ef4444;margin-left:3px;" title="Estimativa baseada em dist\u00e2ncia linear \u2014 API indispon\u00edvel">\u26A0 est.</span>' : ''}`;
         const bandColor = bandColors[r.bestBand] || '#565a6e';
         const bandBadge = `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:${bandColor}22;color:${bandColor};margin-left:4px;">${r.bestBand}'</span>`;
         const clickFn = `_showRouteFromPin(${r.pinLat},${r.pinLon},${lat},${lon})`;
-        const isFastest = idx === 0;
-        const rowBg = isFastest ? 'background:rgba(34,197,94,0.08);' : '';
-        const fastBadge = isFastest ? '<span style="font-size:8px;background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px;font-weight:700;">MAIS R\u00c1PIDO</span>' : '';
-        etaHtml += `<tr onclick="${clickFn}" style="cursor:pointer;${rowBg}" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='${isFastest ? 'rgba(34,197,94,0.08)' : 'transparent'}'"><td style="padding:3px 2px;"><span style="color:${color};font-weight:600;">${r.name}</span>${bandBadge}${fastBadge}</td><td style="padding:3px 2px;text-align:right;">${etaStr}</td></tr>`;
+        etaHtml += `<tr onclick="${clickFn}" style="cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='transparent'"><td style="padding:3px 2px;"><span style="color:${color};font-weight:600;">${r.name}</span>${bandBadge}</td><td style="padding:3px 2px;text-align:right;">${etaStr}</td></tr>`;
       });
       etaHtml += '</table></div>';
     } else {
