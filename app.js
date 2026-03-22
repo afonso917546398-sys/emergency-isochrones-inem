@@ -28,7 +28,7 @@
 
   // ─── State ───
   const pinState = {}; // key -> { enabled, marker, isoLayers: { '10': L.geoJSON, '20': ..., '30': ... } }
-  const isoVisible = { '10': true, '20': true, '30': true, '60': true };
+  const isoVisible = { '10': true, '20': true, '30': true, '60': false };
 
   // ─── Helpers ───
   function createIcon(color, size) {
@@ -62,12 +62,12 @@
   }
 
   // ─── Add pins ───
-  function addPin(pin, layerType) {
+  function addPin(pin, layerType, initialEnabled = true) {
     const key = `${layerType}_${pin.name}`;
     const isAEM = layerType === 'aem';
     const isSIV = isAEM && pin.name.startsWith('SI');
     const color = !isAEM ? COLORS.vmer : isSIV ? '#10b981' : COLORS.aem;
-    const typeLabel = !isAEM ? 'VMER DRC' : isSIV ? 'SIV DRC' : 'AEM DRC';
+    const typeLabel = !isAEM ? 'VMER' : isSIV ? 'SIV' : 'AEM';
 
     const marker = L.marker([pin.lat, pin.lon], { icon: createIcon(color, 12) });
     marker.bindPopup(`
@@ -76,7 +76,7 @@
       <div class="popup-coords">${pin.lat.toFixed(6)}, ${pin.lon.toFixed(6)}</div>
     `);
     marker.bindTooltip(pin.name, { permanent: false, direction: 'top', offset: [0, -10], className: 'marker-tooltip' });
-    marker.addTo(map);
+    if (initialEnabled) marker.addTo(map);
 
     const isoLayers = {};
     const isoConfig = [
@@ -90,17 +90,19 @@
       const geom = pin.isochrones[cfg.key];
       if (!geom) return;
       const layer = createIsoLayer(geom, cfg.color, cfg.opacity, cfg.dashed);
-      if (isoVisible[cfg.key]) layer.addTo(map);
+      if (initialEnabled && isoVisible[cfg.key]) layer.addTo(map);
       isoLayers[cfg.key] = layer;
     });
 
-    // Determine sub-group: aem_drc, siv_drc, or vmer
     const subGroup = layerType === 'vmer' ? 'vmer' :
       (pin.name.startsWith('SI') ? 'siv' : 'aem');
-    pinState[key] = { enabled: true, marker, isoLayers, layerType, subGroup, pin };
+    pinState[key] = { enabled: initialEnabled, marker, isoLayers, layerType, subGroup, pin };
   }
 
-  ISOCHRONE_DATA.aem_codu_centro.forEach(p => addPin(p, 'aem'));
+  ISOCHRONE_DATA.aem_codu_centro.forEach(p => {
+    const isAEM = p.name.startsWith('AE') || p.name.startsWith('HI');
+    addPin(p, 'aem', !isAEM); // AEM starts disabled, SIV starts enabled
+  });
   ISOCHRONE_DATA.vmer_drc.forEach(p => addPin(p, 'vmer'));
 
   // ─── Hospital pins ───
@@ -335,14 +337,21 @@
         });
       });
 
+      // Set toggle-all button initial state based on group
+      if (group.id === 'aem') {
+        toggleAllBtn.dataset.state = 'off';
+        toggleAllBtn.textContent = 'Nenhum';
+      }
+
       // Pin items
       group.data.forEach(pin => {
         const key = `${group.type}_${pin.name}`;
+        const isEnabled = pinState[key]?.enabled ?? true;
         const item = document.createElement('div');
-        item.className = 'pin-item enabled';
+        item.className = isEnabled ? 'pin-item enabled' : 'pin-item';
         item.dataset.pinKey = key;
         item.innerHTML = `
-          <div class="pin-checkbox checked" style="background: ${pinState[key].enabled ? group.color : 'transparent'}">
+          <div class="pin-checkbox ${isEnabled ? 'checked' : ''}" style="background: ${isEnabled ? group.color : 'transparent'}">
             <svg class="check-icon" viewBox="0 0 10 10">
               <polyline points="1.5 5 4 7.5 8.5 2.5" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
