@@ -96,7 +96,7 @@
 
     const subGroup = layerType === 'vmer' ? 'vmer' :
       (pin.name.startsWith('SI') ? 'siv' : 'aem');
-    pinState[key] = { enabled: initialEnabled, marker, isoLayers, layerType, subGroup, pin };
+    pinState[key] = { enabled: initialEnabled, userEnabled: initialEnabled, marker, isoLayers, layerType, subGroup, pin };
   }
 
   ISOCHRONE_DATA.aem_codu_centro.forEach(p => {
@@ -327,10 +327,12 @@
 
         group.data.forEach(pin => {
           const key = `${group.type}_${pin.name}`;
+          if (pinState[key]) pinState[key].userEnabled = newEnabled;
           togglePin(key, newEnabled);
           const checkbox = document.querySelector(`[data-pin-key="${key}"] .pin-checkbox`);
           if (checkbox) {
             checkbox.classList.toggle('checked', newEnabled);
+            checkbox.style.background = newEnabled ? group.color : 'transparent';
           }
           const item = document.querySelector(`[data-pin-key="${key}"]`);
           if (item) item.classList.toggle('enabled', newEnabled);
@@ -370,6 +372,7 @@
           checkbox.classList.toggle('checked', !isEnabled);
           checkbox.style.background = !isEnabled ? group.color : 'transparent';
           item.classList.toggle('enabled', !isEnabled);
+          if (pinState[key]) pinState[key].userEnabled = !isEnabled;
           togglePin(key, !isEnabled);
         });
 
@@ -524,19 +527,17 @@
       searchMarker = null;
     }
     if (searchFilterActive) {
-      // Restore pins to their pre-search state
+      // Restore pins to user's toggle state
       Object.entries(pinState).forEach(([key, state]) => {
-        const shouldBeEnabled = state._enabledBeforeSearch !== undefined ? state._enabledBeforeSearch : true;
-        togglePin(key, shouldBeEnabled);
+        togglePin(key, state.userEnabled);
         const item = document.querySelector(`[data-pin-key="${key}"]`);
         if (item) {
           const cb = item.querySelector('.pin-checkbox');
           const color = state.subGroup === 'vmer' ? COLORS.vmer : state.subGroup === 'siv' ? '#10b981' : COLORS.aem;
-          cb.classList.toggle('checked', shouldBeEnabled);
-          cb.style.background = shouldBeEnabled ? color : 'transparent';
-          item.classList.toggle('enabled', shouldBeEnabled);
+          cb.classList.toggle('checked', state.userEnabled);
+          cb.style.background = state.userEnabled ? color : 'transparent';
+          item.classList.toggle('enabled', state.userEnabled);
         }
-        delete state._enabledBeforeSearch;
       });
       restoreAllHospitals();
       searchFilterActive = false;
@@ -591,12 +592,8 @@
     const reaching = []; // pins that reach within ANY time band
 
     Object.entries(pinState).forEach(([key, state]) => {
-      // Use the pre-search state to decide if this pin should be considered
-      const wasEnabled = state._enabledBeforeSearch !== undefined ? state._enabledBeforeSearch : state.enabled;
-      if (!wasEnabled) {
-        // Pin was off before search (e.g. AEM disabled) — skip entirely
-        return;
-      }
+      // Only include pins the user has enabled (respects AEM off, individual toggles, etc.)
+      if (!state.userEnabled) return;
 
       // Check all time bands
       let bestBand = null;
@@ -936,13 +933,6 @@
 
   async function placeSearchMarker(lat, lon, name) {
     if (searchMarker) map.removeLayer(searchMarker);
-
-    // Save which pins were enabled BEFORE filtering (so we respect user toggles)
-    if (!searchFilterActive) {
-      Object.entries(pinState).forEach(([key, state]) => {
-        state._enabledBeforeSearch = state.enabled;
-      });
-    }
 
     searchMarker = L.marker([lat, lon], {
       icon: L.divIcon({
