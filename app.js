@@ -524,7 +524,20 @@
       searchMarker = null;
     }
     if (searchFilterActive) {
-      restoreAllPins();
+      // Restore pins to their pre-search state
+      Object.entries(pinState).forEach(([key, state]) => {
+        const shouldBeEnabled = state._enabledBeforeSearch !== undefined ? state._enabledBeforeSearch : true;
+        togglePin(key, shouldBeEnabled);
+        const item = document.querySelector(`[data-pin-key="${key}"]`);
+        if (item) {
+          const cb = item.querySelector('.pin-checkbox');
+          const color = state.subGroup === 'vmer' ? COLORS.vmer : state.subGroup === 'siv' ? '#10b981' : COLORS.aem;
+          cb.classList.toggle('checked', shouldBeEnabled);
+          cb.style.background = shouldBeEnabled ? color : 'transparent';
+          item.classList.toggle('enabled', shouldBeEnabled);
+        }
+        delete state._enabledBeforeSearch;
+      });
       restoreAllHospitals();
       searchFilterActive = false;
     }
@@ -578,6 +591,13 @@
     const reaching = []; // pins that reach within ANY time band
 
     Object.entries(pinState).forEach(([key, state]) => {
+      // Use the pre-search state to decide if this pin should be considered
+      const wasEnabled = state._enabledBeforeSearch !== undefined ? state._enabledBeforeSearch : state.enabled;
+      if (!wasEnabled) {
+        // Pin was off before search (e.g. AEM disabled) — skip entirely
+        return;
+      }
+
       // Check all time bands
       let bestBand = null;
       for (const band of ['10', '20', '30', '60']) {
@@ -916,6 +936,13 @@
 
   async function placeSearchMarker(lat, lon, name) {
     if (searchMarker) map.removeLayer(searchMarker);
+
+    // Save which pins were enabled BEFORE filtering (so we respect user toggles)
+    if (!searchFilterActive) {
+      Object.entries(pinState).forEach(([key, state]) => {
+        state._enabledBeforeSearch = state.enabled;
+      });
+    }
 
     searchMarker = L.marker([lat, lon], {
       icon: L.divIcon({
