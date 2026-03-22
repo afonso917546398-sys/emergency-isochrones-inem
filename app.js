@@ -423,28 +423,96 @@
     }
 
     searchTimeout = setTimeout(() => {
-      // Nominatim geocoding - biased to Portugal
-      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pt&limit=6&addressdetails=1`, {
-        headers: { 'Accept-Language': 'pt' }
-      })
+      // Photon geocoder (OSM-based, fuzzy matching, street-level search)
+      // Biased to Portugal centro region
+      const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=pt&lat=40.2&lon=-8.2&location_bias_scale=5`;
+
+      fetch(photonUrl)
       .then(r => r.json())
-      .then(results => {
+      .then(data => {
         searchResults.innerHTML = '';
-        results.forEach(r => {
+        const features = data.features || [];
+        // Filter to Portugal only
+        const ptResults = features.filter(f => {
+          const country = f.properties?.country;
+          return !country || country === 'Portugal';
+        });
+        ptResults.forEach(f => {
+          const p = f.properties || {};
+          const coords = f.geometry?.coordinates; // [lon, lat]
+          if (!coords) return;
+
+          // Build display name
+          const parts = [p.street, p.name].filter(Boolean);
+          const name = parts[0] || p.city || p.town || p.village || p.locality || 'Local';
+          const detailParts = [
+            p.street && p.housenumber ? `${p.street} ${p.housenumber}` : null,
+            p.suburb || p.district,
+            p.city || p.town || p.village,
+            p.county,
+            p.state
+          ].filter(Boolean);
+          // Remove duplicates and the name itself
+          const detail = detailParts.filter(d => d !== name).slice(0, 2).join(', ');
+          const typeIcon = p.osm_value === 'hospital' ? 'H ' :
+                          p.osm_key === 'highway' ? '🛣 ' :
+                          p.osm_value === 'village' || p.osm_value === 'town' ? '🏘 ' : '';
+
           const li = document.createElement('li');
-          const name = r.address.city || r.address.town || r.address.village || r.address.hamlet || r.display_name.split(',')[0];
-          const detail = r.display_name.split(',').slice(1, 3).join(',').trim();
-          li.innerHTML = `<span class="search-result-name">${name}</span><span class="search-result-detail">${detail}</span>`;
+          li.innerHTML = `<span class="search-result-name">${typeIcon}${name}</span><span class="search-result-detail">${detail}</span>`;
           li.addEventListener('click', () => {
-            placeSearchMarker(parseFloat(r.lat), parseFloat(r.lon), name);
+            placeSearchMarker(coords[1], coords[0], name);
             searchResults.innerHTML = '';
             searchInput.value = name;
           });
           searchResults.appendChild(li);
         });
+
+        // If no Photon results, fall back to Nominatim
+        if (ptResults.length === 0) {
+          fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pt&limit=6&addressdetails=1`, {
+            headers: { 'Accept-Language': 'pt' }
+          })
+          .then(r => r.json())
+          .then(results => {
+            results.forEach(r => {
+              const li = document.createElement('li');
+              const rName = r.address.city || r.address.town || r.address.village || r.address.hamlet || r.display_name.split(',')[0];
+              const rDetail = r.display_name.split(',').slice(1, 3).join(',').trim();
+              li.innerHTML = `<span class="search-result-name">${rName}</span><span class="search-result-detail">${rDetail}</span>`;
+              li.addEventListener('click', () => {
+                placeSearchMarker(parseFloat(r.lat), parseFloat(r.lon), rName);
+                searchResults.innerHTML = '';
+                searchInput.value = rName;
+              });
+              searchResults.appendChild(li);
+            });
+          }).catch(() => {});
+        }
       })
-      .catch(() => {});
-    }, 350);
+      .catch(() => {
+        // Fallback to Nominatim if Photon fails
+        fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pt&limit=6&addressdetails=1`, {
+          headers: { 'Accept-Language': 'pt' }
+        })
+        .then(r => r.json())
+        .then(results => {
+          searchResults.innerHTML = '';
+          results.forEach(r => {
+            const li = document.createElement('li');
+            const rName = r.address.city || r.address.town || r.address.village || r.address.hamlet || r.display_name.split(',')[0];
+            const rDetail = r.display_name.split(',').slice(1, 3).join(',').trim();
+            li.innerHTML = `<span class="search-result-name">${rName}</span><span class="search-result-detail">${rDetail}</span>`;
+            li.addEventListener('click', () => {
+              placeSearchMarker(parseFloat(r.lat), parseFloat(r.lon), rName);
+              searchResults.innerHTML = '';
+              searchInput.value = rName;
+            });
+            searchResults.appendChild(li);
+          });
+        }).catch(() => {});
+      });
+    }, 300);
   });
 
   searchClear.addEventListener('click', () => {
