@@ -215,9 +215,9 @@
     const sivPins = ISOCHRONE_DATA.aem_codu_centro.filter(p => p.name.startsWith('SI'));
 
     const groups = [
-      { id: 'aem', label: 'AEM DRC', color: COLORS.aem, data: aemPins, type: 'aem' },
-      { id: 'siv', label: 'SIV DRC', color: '#10b981', data: sivPins, type: 'aem' },
-      { id: 'vmer', label: 'VMER DRC', color: COLORS.vmer, data: ISOCHRONE_DATA.vmer_drc, type: 'vmer' },
+      { id: 'aem', label: 'AEM', color: COLORS.aem, data: aemPins, type: 'aem' },
+      { id: 'siv', label: 'SIV', color: '#10b981', data: sivPins, type: 'aem' },
+      { id: 'vmer', label: 'VMER', color: COLORS.vmer, data: ISOCHRONE_DATA.vmer_drc, type: 'vmer' },
     ];
 
     // Hospital group
