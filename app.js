@@ -868,8 +868,11 @@
       const bandColors = {'10':'#22c55e','20':'#eab308','30':'#f97316','60':'#ef4444'};
       activeETAs.forEach(r => {
         const color = r.subGroup === 'vmer' ? '#f59e0b' : r.subGroup === 'siv' ? '#10b981' : '#3b82f6';
-        const etaColor = r.estimated ? '#ef4444' : '#e2e4ea';
-        const etaStr = `<strong style="color:${etaColor}">${r.eta} min</strong>${r.estimated ? '<span style="font-size:8px;color:#ef4444;margin-left:3px;" title="Estimativa baseada em dist\u00e2ncia linear \u2014 API indispon\u00edvel">\u26A0 est.</span>' : ''}`;
+        let etaColor, etaLabel;
+        if (r.estimated === 'distance') { etaColor = '#ef4444'; etaLabel = '<span style="font-size:8px;color:#ef4444;margin-left:3px;" title="Estimativa grosseira \u2014 baixa precis\u00e3o">\u26A0 impreciso</span>'; }
+        else if (r.estimated === 'grid') { etaColor = '#f59e0b'; etaLabel = '<span style="font-size:8px;color:#f59e0b;margin-left:3px;" title="Estimativa por interpola\u00e7\u00e3o \u2014 precis\u00e3o moderada">\u2248 aprox.</span>'; }
+        else { etaColor = '#e2e4ea'; etaLabel = ''; }
+        const etaStr = `<strong style="color:${etaColor}">${r.eta} min</strong>${etaLabel}`;
         const bandColor = bandColors[r.bestBand] || '#565a6e';
         const bandBadge = `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:${bandColor}22;color:${bandColor};margin-left:4px;">${r.bestBand}'</span>`;
         const clickFn = `_showRouteFromPin(${r.pinLat},${r.pinLon},${lat},${lon})`;
@@ -886,8 +889,11 @@
       hospitalHtml += '<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#565a6e;margin-bottom:4px;">Hospitais mais pr\u00f3ximos</div>';
       hospitalHtml += '<table style="width:100%;font-size:11px;border-collapse:collapse;">';
       activeHospitals.forEach(h => {
-        const etaColor = h.estimated ? '#ef4444' : '#e2e4ea';
-        const etaStr = `<strong style="color:${etaColor}">${h.eta} min</strong>${h.estimated ? '<span style="font-size:8px;color:#ef4444;margin-left:3px;" title="Estimativa baseada em dist\u00e2ncia linear \u2014 API indispon\u00edvel">\u26A0 est.</span>' : ''}`;
+        let etaColor, etaLabel;
+        if (h.estimated === 'distance') { etaColor = '#ef4444'; etaLabel = '<span style="font-size:8px;color:#ef4444;margin-left:3px;">\u26A0 impreciso</span>'; }
+        else if (h.estimated === 'grid') { etaColor = '#f59e0b'; etaLabel = '<span style="font-size:8px;color:#f59e0b;margin-left:3px;">\u2248 aprox.</span>'; }
+        else { etaColor = '#e2e4ea'; etaLabel = ''; }
+        const etaStr = `<strong style="color:${etaColor}">${h.eta} min</strong>${etaLabel}`;
         const distStr = `<span style="font-size:9px;color:#565a6e;margin-left:4px;">${h.dist.toFixed(0)}km</span>`;
         const clickFn = `_showRouteToHospital(${lat},${lon},${h.lat},${h.lon})`;
         hospitalHtml += `<tr onclick="${clickFn}" style="cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='transparent'"><td style="padding:3px 2px;"><span style="color:#16a34a;font-weight:bold;">H</span> <span style="color:#e2e4ea;">${h.name}</span>${distStr}</td><td style="padding:3px 2px;text-align:right;white-space:nowrap;">${etaStr}</td></tr>`;
@@ -960,12 +966,13 @@
           etaResults = reaching.map((state, i) => {
             const t = rows[i]?.[0]?.time;
             const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+            const gridEta = mins === null ? getGridETA(state.pin.name, lat, lon) : null;
             return {
               name: state.pin.name, originalName: state.pin.name,
               layerType: state.layerType, subGroup: state.subGroup,
               bestBand: state._bestBand,
-              eta: mins ?? getGridETA(state.pin.name, lat, lon) ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
-              estimated: mins === null,
+              eta: mins ?? gridEta ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+              estimated: mins ? false : (gridEta ? 'grid' : 'distance'),
               pinLat: state.pin.lat, pinLon: state.pin.lon
             };
           });
@@ -983,25 +990,31 @@
           hospitalETAs = closest3.map((h, i) => {
             const t = row[i]?.time;
             const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-            return { ...h, eta: mins ?? getGridETA(h.name, lat, lon) ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: mins === null };
+            const gridEta = mins === null ? getGridETA(h.name, lat, lon) : null;
+            return { ...h, eta: mins ?? gridEta ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: mins ? false : (gridEta ? 'grid' : 'distance') };
           });
         } else { throw new Error('API failed'); }
       }
     } catch (e) {
-      // Fallback: use grid interpolation
+      // Fallback: grid then distance estimate
       if (etaResults.length === 0) {
-        etaResults = reaching.map(state => ({
-          name: state.pin.name, originalName: state.pin.name,
-          layerType: state.layerType, subGroup: state.subGroup,
-          bestBand: state._bestBand,
-          eta: getGridETA(state.pin.name, lat, lon) ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
-          estimated: true, pinLat: state.pin.lat, pinLon: state.pin.lon
-        }));
+        etaResults = reaching.map(state => {
+          const gridEta = getGridETA(state.pin.name, lat, lon);
+          return {
+            name: state.pin.name, originalName: state.pin.name,
+            layerType: state.layerType, subGroup: state.subGroup,
+            bestBand: state._bestBand,
+            eta: gridEta ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+            estimated: gridEta ? 'grid' : 'distance',
+            pinLat: state.pin.lat, pinLon: state.pin.lon
+          };
+        });
       }
       if (hospitalETAs.length === 0) {
-        hospitalETAs = closest3.map(h => ({
-          ...h, eta: getGridETA(h.name, lat, lon) ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: true
-        }));
+        hospitalETAs = closest3.map(h => {
+          const gridEta = getGridETA(h.name, lat, lon);
+          return { ...h, eta: gridEta ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: gridEta ? 'grid' : 'distance' };
+        });
       }
     }
 
