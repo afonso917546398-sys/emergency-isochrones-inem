@@ -645,6 +645,39 @@
     return Math.round(roadKm / (50 / 60));
   }
 
+  // ─── Grid interpolation: instant ETAs from pre-computed grid ───
+  const grid = ISOCHRONE_DATA.eta_grid;
+  const gridMeta = grid ? grid.meta : null;
+  const gridPoints = grid ? grid.points : [];
+  const gridETAs = grid ? grid.etas : {};
+
+  function getGridETA(sourceName, lat, lon) {
+    if (!gridMeta || !gridETAs[sourceName]) return null;
+
+    // Find 4 nearest grid points and interpolate
+    let nearest = [];
+    for (let i = 0; i < gridPoints.length; i++) {
+      const p = gridPoints[i];
+      const d = Math.sqrt((p.lat - lat) ** 2 + (p.lon - lon) ** 2);
+      nearest.push({ idx: i, dist: d });
+    }
+    nearest.sort((a, b) => a.dist - b.dist);
+    nearest = nearest.slice(0, 4);
+
+    // Inverse distance weighting
+    let weightedSum = 0, weightSum = 0;
+    for (const n of nearest) {
+      const eta = gridETAs[sourceName][n.idx];
+      if (eta === null) continue;
+      const w = n.dist < 0.0001 ? 10000 : 1 / (n.dist * n.dist);
+      weightedSum += eta * w;
+      weightSum += w;
+    }
+
+    if (weightSum === 0) return null;
+    return Math.round(weightedSum / weightSum);
+  }
+
   // Get ETA between two points via Valhalla with retry + fallback
   // Returns { minutes, estimated } where estimated=true means fallback was used
   async function getETA(fromLat, fromLon, toLat, toLon) {
@@ -829,103 +862,35 @@
       .map(b => `${bandCounts[b]} em ${b} min`)
       .join(', ');
 
-    // Show initial popup immediately
-    const loadingPopup = `
-      <div class="popup-name" style="color:#dc2626">${name}</div>
-      <div class="popup-coords">${lat.toFixed(6)}, ${lon.toFixed(6)}</div>
-      <div style="margin-top:6px;font-size:11px;color:#8b8fa3;">
-        <strong style="color:#e2e4ea;">${reaching.length}</strong> meio${reaching.length !== 1 ? 's' : ''} alcançam ${reaching.length > 0 ? '(' + bandSummary + ')' : ''}
-      </div>
-      <div style="margin-top:6px;font-size:10px;color:#565a6e;">A calcular ETAs...</div>
-    `;
-    searchMarker.bindPopup(loadingPopup, { maxWidth: 300, minWidth: 220 });
+    searchMarker.bindPopup('', { maxWidth: 300, minWidth: 220 });
     searchMarker.addTo(map);
     map.flyTo([lat, lon], 11, { duration: 0.8 });
-    searchMarker.openPopup();
 
-    // Use Valhalla Matrix API: one request for all vehicle→destination ETAs
+    // ETAs: use pre-computed grid (instant) with API fallback
     const closest3 = findClosest3Hospitals(lat, lon);
 
-    let etaResults = [];
-    let hospitalETAs = [];
+    // 1) Vehicle ETAs from grid interpolation
+    let etaResults = reaching.map(state => {
+      const gridEta = getGridETA(state.pin.name, lat, lon);
+      return {
+        name: state.pin.name, originalName: state.pin.name,
+        layerType: state.layerType, subGroup: state.subGroup,
+        bestBand: state._bestBand,
+        eta: gridEta ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+        estimated: gridEta === null,
+        pinLat: state.pin.lat, pinLon: state.pin.lon
+      };
+    });
 
-    // Build matrix request: sources = reaching vehicles, targets = [searchPoint]
-    // Plus: sources = [searchPoint], targets = closest 3 hospitals
-    try {
-      // 1) Vehicles → search point
-      if (reaching.length > 0) {
-        const vSources = reaching.map(s => ({ lat: s.pin.lat, lon: s.pin.lon }));
-        const vTargets = [{ lat, lon }];
-        const vPayload = { sources: vSources, targets: vTargets, costing: 'auto' };
-        const vResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(vPayload)
-        });
-        if (vResp.ok) {
-          const vData = await vResp.json();
-          const rows = vData.sources_to_targets || [];
-          etaResults = reaching.map((state, i) => {
-            const t = rows[i]?.[0]?.time;
-            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-            return {
-              name: state.pin.name, originalName: state.pin.name,
-              layerType: state.layerType, subGroup: state.subGroup,
-              bestBand: state._bestBand,
-              eta: mins ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
-              estimated: mins === null,
-              pinLat: state.pin.lat, pinLon: state.pin.lon
-            };
-          });
-        } else {
-          throw new Error('Matrix API failed');
-        }
-      }
-
-      // 2) Search point → hospitals
-      if (closest3.length > 0) {
-        const hSources = [{ lat, lon }];
-        const hTargets = closest3.map(h => ({ lat: h.lat, lon: h.lon }));
-        const hPayload = { sources: hSources, targets: hTargets, costing: 'auto' };
-        const hResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(hPayload)
-        });
-        if (hResp.ok) {
-          const hData = await hResp.json();
-          const row = hData.sources_to_targets?.[0] || [];
-          hospitalETAs = closest3.map((h, i) => {
-            const t = row[i]?.time;
-            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-            return {
-              ...h,
-              eta: mins ?? fallbackETA(lat, lon, h.lat, h.lon),
-              estimated: mins === null
-            };
-          });
-        } else {
-          throw new Error('Hospital matrix failed');
-        }
-      }
-    } catch (e) {
-      // Fallback: estimate all from distance
-      if (etaResults.length === 0) {
-        etaResults = reaching.map(state => ({
-          name: state.pin.name, originalName: state.pin.name,
-          layerType: state.layerType, subGroup: state.subGroup,
-          bestBand: state._bestBand,
-          eta: fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
-          estimated: true,
-          pinLat: state.pin.lat, pinLon: state.pin.lon
-        }));
-      }
-      if (hospitalETAs.length === 0) {
-        hospitalETAs = closest3.map(h => ({
-          ...h,
-          eta: fallbackETA(lat, lon, h.lat, h.lon),
-          estimated: true
-        }));
-      }
-    }
+    // 2) Hospital ETAs from grid interpolation
+    let hospitalETAs = closest3.map(h => {
+      const gridEta = getGridETA(h.name, lat, lon);
+      return {
+        ...h,
+        eta: gridEta ?? fallbackETA(lat, lon, h.lat, h.lon),
+        estimated: gridEta === null
+      };
+    });
 
     etaResults.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
     hospitalETAs.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
@@ -934,12 +899,10 @@
     const selectedKeys = closest3.map(h => h._key);
     filterHospitals(selectedKeys);
 
-    // Cache search data for live popup rebuilding
+    // Cache and show popup instantly
     lastSearchData = { name, lat, lon, etaResults, hospitalETAs, bandSummary };
-
-    // Build and show popup
     rebuildSearchPopup();
-    if (!searchMarker.isPopupOpen()) searchMarker.openPopup();
+    searchMarker.openPopup();
   }
 
   // ─── Mobile sidebar toggle ───
