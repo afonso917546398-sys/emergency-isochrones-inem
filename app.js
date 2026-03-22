@@ -932,35 +932,78 @@
       .map(b => `${bandCounts[b]} em ${b} min`)
       .join(', ');
 
-    searchMarker.bindPopup('', { maxWidth: 300, minWidth: 220 });
+    const loadingHtml = `
+      <div class="popup-name" style="color:#dc2626">${name}</div>
+      <div class="popup-coords">${lat.toFixed(6)}, ${lon.toFixed(6)}</div>
+      <div style="margin-top:6px;font-size:10px;color:#565a6e;">A calcular ETAs...</div>
+    `;
+    searchMarker.bindPopup(loadingHtml, { maxWidth: 300, minWidth: 220 });
     searchMarker.addTo(map);
     map.flyTo([lat, lon], 11, { duration: 0.8 });
+    searchMarker.openPopup();
 
-    // ETAs: use pre-computed grid (instant) with API fallback
+    // ETAs: Valhalla Matrix API (accurate) with grid fallback
     const closest3 = findClosest3Hospitals(lat, lon);
+    let etaResults = [];
+    let hospitalETAs = [];
 
-    // 1) Vehicle ETAs from grid interpolation
-    let etaResults = reaching.map(state => {
-      const gridEta = getGridETA(state.pin.name, lat, lon);
-      return {
-        name: state.pin.name, originalName: state.pin.name,
-        layerType: state.layerType, subGroup: state.subGroup,
-        bestBand: state._bestBand,
-        eta: gridEta ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
-        estimated: gridEta === null,
-        pinLat: state.pin.lat, pinLon: state.pin.lon
-      };
-    });
+    try {
+      // 1) All vehicles → search point (single matrix request)
+      if (reaching.length > 0) {
+        const vSources = reaching.map(s => ({ lat: s.pin.lat, lon: s.pin.lon }));
+        const vResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sources: vSources, targets: [{ lat, lon }], costing: 'auto' })
+        });
+        if (vResp.ok) {
+          const rows = (await vResp.json()).sources_to_targets || [];
+          etaResults = reaching.map((state, i) => {
+            const t = rows[i]?.[0]?.time;
+            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+            return {
+              name: state.pin.name, originalName: state.pin.name,
+              layerType: state.layerType, subGroup: state.subGroup,
+              bestBand: state._bestBand,
+              eta: mins ?? getGridETA(state.pin.name, lat, lon) ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+              estimated: mins === null,
+              pinLat: state.pin.lat, pinLon: state.pin.lon
+            };
+          });
+        } else { throw new Error('API failed'); }
+      }
 
-    // 2) Hospital ETAs from grid interpolation
-    let hospitalETAs = closest3.map(h => {
-      const gridEta = getGridETA(h.name, lat, lon);
-      return {
-        ...h,
-        eta: gridEta ?? fallbackETA(lat, lon, h.lat, h.lon),
-        estimated: gridEta === null
-      };
-    });
+      // 2) Search point → hospitals (single matrix request)
+      if (closest3.length > 0) {
+        const hResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sources: [{ lat, lon }], targets: closest3.map(h => ({ lat: h.lat, lon: h.lon })), costing: 'auto' })
+        });
+        if (hResp.ok) {
+          const row = (await hResp.json()).sources_to_targets?.[0] || [];
+          hospitalETAs = closest3.map((h, i) => {
+            const t = row[i]?.time;
+            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+            return { ...h, eta: mins ?? getGridETA(h.name, lat, lon) ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: mins === null };
+          });
+        } else { throw new Error('API failed'); }
+      }
+    } catch (e) {
+      // Fallback: use grid interpolation
+      if (etaResults.length === 0) {
+        etaResults = reaching.map(state => ({
+          name: state.pin.name, originalName: state.pin.name,
+          layerType: state.layerType, subGroup: state.subGroup,
+          bestBand: state._bestBand,
+          eta: getGridETA(state.pin.name, lat, lon) ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
+          estimated: true, pinLat: state.pin.lat, pinLon: state.pin.lon
+        }));
+      }
+      if (hospitalETAs.length === 0) {
+        hospitalETAs = closest3.map(h => ({
+          ...h, eta: getGridETA(h.name, lat, lon) ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: true
+        }));
+      }
+    }
 
     etaResults.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
     hospitalETAs.sort((a, b) => (a.eta ?? 999) - (b.eta ?? 999));
