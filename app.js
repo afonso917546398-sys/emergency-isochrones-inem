@@ -406,7 +406,34 @@
   let searchMarker = null;
   let searchTimeout = null;
 
+  let selectedIdx = -1;
+
+  searchInput.addEventListener('keydown', (e) => {
+    const items = searchResults.querySelectorAll('li');
+    if (!items.length) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
+      items.forEach((li, i) => li.style.background = i === selectedIdx ? 'rgba(255,255,255,0.08)' : 'transparent');
+      items[selectedIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIdx = Math.max(selectedIdx - 1, 0);
+      items.forEach((li, i) => li.style.background = i === selectedIdx ? 'rgba(255,255,255,0.08)' : 'transparent');
+      items[selectedIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter' && selectedIdx >= 0 && selectedIdx < items.length) {
+      e.preventDefault();
+      items[selectedIdx].click();
+      selectedIdx = -1;
+    } else if (e.key === 'Escape') {
+      searchResults.innerHTML = '';
+      selectedIdx = -1;
+    }
+  });
+
   searchInput.addEventListener('input', () => {
+    selectedIdx = -1;
     const q = searchInput.value.trim();
     searchClear.style.display = q ? 'block' : 'none';
 
