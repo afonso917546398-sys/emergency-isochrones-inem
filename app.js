@@ -417,6 +417,25 @@
     }
 
     searchTimeout = setTimeout(() => {
+      // Detect coordinates (lat, lon) in various formats
+      const coordMatch = q.match(/^\s*(-?\d+[.,]\d+)[\s,;/]+(-?\d+[.,]\d+)\s*$/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1].replace(',', '.'));
+        const lon = parseFloat(coordMatch[2].replace(',', '.'));
+        if (lat >= 36 && lat <= 43 && lon >= -10 && lon <= -6) {
+          searchResults.innerHTML = '';
+          const li = document.createElement('li');
+          li.innerHTML = `<span class="search-result-name">${lat.toFixed(6)}, ${lon.toFixed(6)}</span><span class="search-result-detail">Coordenadas GPS</span>`;
+          li.addEventListener('click', () => {
+            placeSearchMarker(lat, lon, `${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+            searchResults.innerHTML = '';
+            searchInput.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+          });
+          searchResults.appendChild(li);
+          return;
+        }
+      }
+
       // Detect postal code pattern (XXXX or XXXX-XXX)
       const postalMatch = q.match(/^(\d{4})(?:[-\s]?(\d{3}))?$/);
 
