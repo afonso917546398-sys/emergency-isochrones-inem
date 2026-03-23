@@ -419,15 +419,52 @@
     searchTimeout = setTimeout(() => {
       // Detect postal code pattern (XXXX or XXXX-XXX)
       const postalMatch = q.match(/^(\d{4})(?:[-\s]?(\d{3}))?$/);
-      let nominatimUrl;
+
       if (postalMatch) {
-        // Use structured postal code search (4-digit base always works)
-        nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&postalcode=${postalMatch[1]}&country=pt&limit=5&addressdetails=1`;
-      } else {
-        nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pt&limit=5&addressdetails=1`;
+        // Use GeoAPI.pt for postal codes (official CTT data)
+        const cp = postalMatch[2] ? `${postalMatch[1]}-${postalMatch[2]}` : postalMatch[1];
+        fetch(`https://geoapi.pt/cp/${cp}?json=1`)
+          .then(r => r.json())
+          .then(data => {
+            searchResults.innerHTML = '';
+            if (data.pontos && data.pontos.length > 0) {
+              const coords = data.pontos[0].coordenadas;
+              const name = `${data.CP || cp} — ${data.Localidade || data['Designação Postal'] || ''}`;
+              const detail = `${data.Concelho || ''}, ${data.Distrito || ''}`;
+              const li = document.createElement('li');
+              li.innerHTML = `<span class="search-result-name">${name}</span><span class="search-result-detail">${detail}</span>`;
+              li.addEventListener('click', () => {
+                placeSearchMarker(coords[0], coords[1], name);
+                searchResults.innerHTML = '';
+                searchInput.value = name;
+              });
+              searchResults.appendChild(li);
+            } else if (data.CP4) {
+              // 4-digit code: show general area
+              const name = `${data.CP4} — ${data['Designação Postal'] || data.Concelho || ''}`;
+              const detail = data.Distrito || '';
+              // No exact coords for 4-digit, fallback to Nominatim
+              fetch(`https://nominatim.openstreetmap.org/search?format=json&postalcode=${data.CP4}&country=pt&limit=1&addressdetails=1`, { headers: { 'Accept-Language': 'pt' } })
+                .then(r => r.json()).then(nr => {
+                  if (nr.length > 0) {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<span class="search-result-name">${name}</span><span class="search-result-detail">${detail}</span>`;
+                    li.addEventListener('click', () => {
+                      placeSearchMarker(parseFloat(nr[0].lat), parseFloat(nr[0].lon), name);
+                      searchResults.innerHTML = '';
+                      searchInput.value = name;
+                    });
+                    searchResults.appendChild(li);
+                  }
+                }).catch(() => {});
+            }
+          }).catch(() => {});
+        return;
       }
-      // Run Photon + Nominatim in parallel, merge results
+
+      // Non-postal: run Photon + Nominatim in parallel
       const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=5&lang=pt&lat=40.2&lon=-8.2&location_bias_scale=5`;
+      const nominatimUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=pt&limit=5&addressdetails=1`;
 
       const photonPromise = fetch(photonUrl).then(r => r.json()).catch(() => ({ features: [] }));
       const nominatimPromise = fetch(nominatimUrl, { headers: { 'Accept-Language': 'pt' } }).then(r => r.json()).catch(() => []);
@@ -459,8 +496,7 @@
           const a = r.address || {};
           const postcode = a.postcode || '';
           const placeName = a.hamlet || a.village || a.town || a.city || a.suburb || r.display_name.split(',')[0];
-          // If searching by postal code, show it in the name
-          const name = postalMatch ? `${postcode} — ${placeName}` : placeName;
+          const name = placeName;
           const detailParts = [
             a.hamlet && a.village ? a.village : null,
             a.town && a.town !== placeName ? a.town : null,
