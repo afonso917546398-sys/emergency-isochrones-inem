@@ -467,20 +467,18 @@
       const postalMatch = q.match(/^(\d{4})(?:[-\s]?(\d{3}))?$/);
 
       if (postalMatch) {
-        // Local postal code lookup (70K codes from CTT, offline)
-        const cp = postalMatch[2] ? `${postalMatch[1]}-${postalMatch[2]}` : postalMatch[1];
-        const cp4 = postalMatch[1];
+        // Local postal code lookup (197K CP7 with GPS coordinates, offline)
         searchResults.innerHTML = '';
 
-        // Parse the postal data blob and find matches
         if (typeof POSTAL_DATA !== 'undefined') {
           const lines = POSTAL_DATA.split('\n');
           const matches = [];
           const searchCP = postalMatch[2] ? `${postalMatch[1]}-${postalMatch[2]}` : postalMatch[1];
           for (const line of lines) {
             if (line.startsWith(searchCP)) {
-              const [code, loc] = line.split('|');
-              matches.push({ cp: code, loc });
+              const parts = line.split('|');
+              // Format: CP7|name|lat|lon
+              matches.push({ cp: parts[0], loc: parts[1], lat: parseFloat(parts[2]), lon: parseFloat(parts[3]) });
               if (matches.length >= 8) break;
             }
           }
@@ -489,17 +487,13 @@
             const li = document.createElement('li');
             li.innerHTML = `<span class="search-result-name">${m.cp} — ${m.loc}</span><span class="search-result-detail">Código Postal CTT</span>`;
             li.addEventListener('click', () => {
-              // Geocode via Nominatim on click
-              fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(m.cp + ' Portugal')}&limit=1&addressdetails=1`, { headers: { 'Accept-Language': 'pt' } })
-                .then(r => r.json())
-                .then(results => {
-                  if (results.length > 0) {
-                    const name = `${m.cp} — ${m.loc}`;
-                    placeSearchMarker(parseFloat(results[0].lat), parseFloat(results[0].lon), name);
-                    searchResults.innerHTML = '';
-                    searchInput.value = name;
-                  }
-                }).catch(() => {});
+              // Direct local coordinates — no external API needed
+              if (m.lat && m.lon && !isNaN(m.lat) && !isNaN(m.lon)) {
+                const name = `${m.cp} — ${m.loc}`;
+                placeSearchMarker(m.lat, m.lon, name);
+                searchResults.innerHTML = '';
+                searchInput.value = name;
+              }
             });
             searchResults.appendChild(li);
           });
