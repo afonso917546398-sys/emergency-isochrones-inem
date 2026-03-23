@@ -436,18 +436,17 @@
           const coords = f.geometry?.coordinates; // [lon, lat]
           if (!coords) return;
 
-          // Build display name
-          const parts = [p.street, p.name].filter(Boolean);
-          const name = parts[0] || p.city || p.town || p.village || p.locality || 'Local';
+          // Build display name: always prefer the specific name the user searched for
+          const name = p.name || p.street || p.locality || p.hamlet || p.village || p.suburb || p.town || p.city || 'Local';
           const detailParts = [
-            p.street && p.housenumber ? `${p.street} ${p.housenumber}` : null,
-            p.suburb || p.district,
-            p.city || p.town || p.village,
-            p.county,
-            p.state
+            p.housenumber && p.street ? `${p.street} ${p.housenumber}` : null,
+            p.hamlet && p.hamlet !== name ? p.hamlet : null,
+            p.village && p.village !== name ? p.village : null,
+            p.town && p.town !== name ? p.town : null,
+            p.city && p.city !== name ? p.city : null,
+            p.county && p.county !== name ? p.county : null,
           ].filter(Boolean);
-          // Remove duplicates and the name itself
-          const detail = detailParts.filter(d => d !== name).slice(0, 2).join(', ');
+          const detail = detailParts.slice(0, 2).join(', ');
           const typeIcon = p.osm_value === 'hospital' ? 'H ' :
                           p.osm_key === 'highway' ? '🛣 ' :
                           p.osm_value === 'village' || p.osm_value === 'town' ? '🏘 ' : '';
