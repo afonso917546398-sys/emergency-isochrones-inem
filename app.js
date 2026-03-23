@@ -467,54 +467,43 @@
       const postalMatch = q.match(/^(\d{4})(?:[-\s]?(\d{3}))?$/);
 
       if (postalMatch) {
-        // Use GeoAPI.pt for postal codes (official CTT data), with Nominatim fallback
+        // Local postal code lookup (70K codes from CTT, offline)
         const cp = postalMatch[2] ? `${postalMatch[1]}-${postalMatch[2]}` : postalMatch[1];
         const cp4 = postalMatch[1];
+        searchResults.innerHTML = '';
 
-        // Try GeoAPI.pt first, fallback to Nominatim
-        fetch(`https://geoapi.pt/cp/${cp}?json=1`)
-          .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-          .then(data => {
-            searchResults.innerHTML = '';
-            if (data.pontos && data.pontos.length > 0) {
-              const coords = data.pontos[0].coordenadas;
-              const name = `${data.CP || cp} — ${data.Localidade || data['Designação Postal'] || ''}`;
-              const detail = `${data.Concelho || ''}, ${data.Distrito || ''}`;
-              const li = document.createElement('li');
-              li.innerHTML = `<span class="search-result-name">${name}</span><span class="search-result-detail">${detail}</span>`;
-              li.addEventListener('click', () => {
-                placeSearchMarker(coords[0], coords[1], name);
-                searchResults.innerHTML = '';
-                searchInput.value = name;
-              });
-              searchResults.appendChild(li);
-            } else {
-              throw new Error('no points');
+        // Parse the postal data blob and find matches
+        if (typeof POSTAL_DATA !== 'undefined') {
+          const lines = POSTAL_DATA.split('\n');
+          const matches = [];
+          const searchCP = postalMatch[2] ? `${postalMatch[1]}-${postalMatch[2]}` : postalMatch[1];
+          for (const line of lines) {
+            if (line.startsWith(searchCP)) {
+              const [code, loc] = line.split('|');
+              matches.push({ cp: code, loc });
+              if (matches.length >= 8) break;
             }
-          })
-          .catch(() => {
-            // Fallback: Nominatim structured postal code search
-            fetch(`https://nominatim.openstreetmap.org/search?format=json&postalcode=${cp4}&country=pt&limit=3&addressdetails=1`, { headers: { 'Accept-Language': 'pt' } })
-              .then(r => r.json())
-              .then(results => {
-                searchResults.innerHTML = '';
-                if (results.length > 0) {
-                  results.forEach(r => {
-                    const a = r.address || {};
-                    const name = `${cp} — ${a.hamlet || a.village || a.town || a.city || r.display_name.split(',')[0]}`;
-                    const detail = [a.town, a.city, a.state].filter(Boolean).slice(0, 2).join(', ');
-                    const li = document.createElement('li');
-                    li.innerHTML = `<span class="search-result-name">${name}</span><span class="search-result-detail">${detail}</span>`;
-                    li.addEventListener('click', () => {
-                      placeSearchMarker(parseFloat(r.lat), parseFloat(r.lon), name);
-                      searchResults.innerHTML = '';
-                      searchInput.value = name;
-                    });
-                    searchResults.appendChild(li);
-                  });
-                }
-              }).catch(() => {});
+          }
+
+          matches.forEach(m => {
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="search-result-name">${m.cp} — ${m.loc}</span><span class="search-result-detail">Código Postal CTT</span>`;
+            li.addEventListener('click', () => {
+              // Geocode via Nominatim on click
+              fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(m.cp + ' Portugal')}&limit=1&addressdetails=1`, { headers: { 'Accept-Language': 'pt' } })
+                .then(r => r.json())
+                .then(results => {
+                  if (results.length > 0) {
+                    const name = `${m.cp} — ${m.loc}`;
+                    placeSearchMarker(parseFloat(results[0].lat), parseFloat(results[0].lon), name);
+                    searchResults.innerHTML = '';
+                    searchInput.value = name;
+                  }
+                }).catch(() => {});
+            });
+            searchResults.appendChild(li);
           });
+        }
         return;
       }
 
