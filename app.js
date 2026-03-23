@@ -52,8 +52,8 @@
     return L.geoJSON(geometry, {
       style: {
         color: color,
-        weight: 2,
-        opacity: 0.6,
+        weight: 1.5,
+        opacity: 0.35,
         fillColor: color,
         fillOpacity: opacity,
         dashArray: dashed ? '6 4' : null
@@ -80,10 +80,10 @@
 
     const isoLayers = {};
     const isoConfig = [
-      { key: '60', color: COLORS.iso60, opacity: 0.06, dashed: true },
-      { key: '30', color: COLORS.iso30, opacity: 0.12, dashed: true },
-      { key: '20', color: COLORS.iso20, opacity: 0.18, dashed: false },
-      { key: '10', color: COLORS.iso10, opacity: 0.25, dashed: false },
+      { key: '60', color: COLORS.iso60, opacity: 0.04, dashed: true },
+      { key: '30', color: COLORS.iso30, opacity: 0.07, dashed: true },
+      { key: '20', color: COLORS.iso20, opacity: 0.10, dashed: false },
+      { key: '10', color: COLORS.iso10, opacity: 0.14, dashed: false },
     ];
 
     isoConfig.forEach(cfg => {
@@ -686,12 +686,18 @@
 
   let searchFilterActive = false;
   let lastSearchData = null; // stores { lat, lon, name, etaResults, hospitalETAs, bandSummary, reaching }
-  let activeRouteLayer = null; // current route polyline on map
+  let activeRoutePin = null;    // route from pin to location (blue)
+  let activeRouteHosp = null;   // route from location to hospital (white)
 
   // Fetch route shape from Valhalla and draw on map
-  async function showRoute(fromLat, fromLon, toLat, toLon, color) {
-    // Remove previous route
-    if (activeRouteLayer) { map.removeLayer(activeRouteLayer); activeRouteLayer = null; }
+  // routeType: 'pin' (blue, meio→local) or 'hospital' (white, local→hospital)
+  async function showRoute(fromLat, fromLon, toLat, toLon, routeType) {
+    const color = routeType === 'hospital' ? '#ffffff' : '#3b82f6';
+    const weight = routeType === 'hospital' ? 3 : 4;
+
+    // Remove only the route of this type
+    if (routeType === 'pin' && activeRoutePin) { map.removeLayer(activeRoutePin); activeRoutePin = null; }
+    if (routeType === 'hospital' && activeRouteHosp) { map.removeLayer(activeRouteHosp); activeRouteHosp = null; }
 
     try {
       const payload = {
@@ -708,37 +714,39 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!resp.ok) { drawStraightLine(fromLat, fromLon, toLat, toLon, color); return; }
+      if (!resp.ok) { drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType); return; }
       const data = await resp.json();
       const shape = data.trip?.legs?.[0]?.shape;
-      if (!shape) { drawStraightLine(fromLat, fromLon, toLat, toLon, color); return; }
+      if (!shape) { drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType); return; }
 
-      // Decode polyline6
       const coords = decodePolyline6(shape);
-      activeRouteLayer = L.polyline(coords, {
-        color: color || '#3b82f6',
-        weight: 4,
-        opacity: 0.85,
-        dashArray: null,
-        lineCap: 'round',
-        lineJoin: 'round'
+      const layer = L.polyline(coords, {
+        color, weight, opacity: 0.85, lineCap: 'round', lineJoin: 'round'
       }).addTo(map);
 
-      // Fit map to show entire route
-      map.fitBounds(activeRouteLayer.getBounds(), { padding: [60, 60] });
+      if (routeType === 'pin') activeRoutePin = layer;
+      else activeRouteHosp = layer;
+
+      // Fit to show both routes if both exist
+      const bounds = L.latLngBounds([]);
+      if (activeRoutePin) bounds.extend(activeRoutePin.getBounds());
+      if (activeRouteHosp) bounds.extend(activeRouteHosp.getBounds());
+      map.fitBounds(bounds, { padding: [60, 60] });
     } catch {
-      drawStraightLine(fromLat, fromLon, toLat, toLon, color);
+      drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType);
     }
   }
 
   // Fallback: straight dashed line if routing fails
-  function drawStraightLine(fromLat, fromLon, toLat, toLon, color) {
-    if (activeRouteLayer) { map.removeLayer(activeRouteLayer); activeRouteLayer = null; }
-    activeRouteLayer = L.polyline(
+  function drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType) {
+    if (routeType === 'pin' && activeRoutePin) { map.removeLayer(activeRoutePin); activeRoutePin = null; }
+    if (routeType === 'hospital' && activeRouteHosp) { map.removeLayer(activeRouteHosp); activeRouteHosp = null; }
+    const layer = L.polyline(
       [[fromLat, fromLon], [toLat, toLon]],
-      { color: color || '#3b82f6', weight: 3, opacity: 0.6, dashArray: '8 6' }
+      { color, weight, opacity: 0.6, dashArray: '8 6' }
     ).addTo(map);
-    map.fitBounds(activeRouteLayer.getBounds(), { padding: [60, 60] });
+    if (routeType === 'pin') activeRoutePin = layer;
+    else activeRouteHosp = layer;
   }
 
   // Decode Valhalla polyline6 format
@@ -757,24 +765,24 @@
     return coords;
   }
 
-  // Clear route
+  // Clear both routes
   function clearRoute() {
-    if (activeRouteLayer) { map.removeLayer(activeRouteLayer); activeRouteLayer = null; }
+    if (activeRoutePin) { map.removeLayer(activeRoutePin); activeRoutePin = null; }
+    if (activeRouteHosp) { map.removeLayer(activeRouteHosp); activeRouteHosp = null; }
   }
 
   // Global handler for popup route clicks
   window._refreshETAs = async function() {
     if (!lastSearchData) return;
     const { name, lat, lon } = lastSearchData;
-    // Re-run the search (will try API again)
     await placeSearchMarker(lat, lon, name);
   };
 
   window._showRouteFromPin = async function(fromLat, fromLon, toLat, toLon) {
-    await showRoute(fromLat, fromLon, toLat, toLon, '#3b82f6');
+    await showRoute(fromLat, fromLon, toLat, toLon, 'pin');
   };
   window._showRouteToHospital = async function(fromLat, fromLon, toLat, toLon) {
-    await showRoute(fromLat, fromLon, toLat, toLon, '#3b82f6');
+    await showRoute(fromLat, fromLon, toLat, toLon, 'hospital');
   };
 
   const EMERGENCY_SPEED_FACTOR = 1.3;
