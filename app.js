@@ -467,10 +467,13 @@
       const postalMatch = q.match(/^(\d{4})(?:[-\s]?(\d{3}))?$/);
 
       if (postalMatch) {
-        // Use GeoAPI.pt for postal codes (official CTT data)
+        // Use GeoAPI.pt for postal codes (official CTT data), with Nominatim fallback
         const cp = postalMatch[2] ? `${postalMatch[1]}-${postalMatch[2]}` : postalMatch[1];
+        const cp4 = postalMatch[1];
+
+        // Try GeoAPI.pt first, fallback to Nominatim
         fetch(`https://geoapi.pt/cp/${cp}?json=1`)
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
           .then(data => {
             searchResults.innerHTML = '';
             if (data.pontos && data.pontos.length > 0) {
@@ -485,26 +488,33 @@
                 searchInput.value = name;
               });
               searchResults.appendChild(li);
-            } else if (data.CP4) {
-              // 4-digit code: show general area
-              const name = `${data.CP4} — ${data['Designação Postal'] || data.Concelho || ''}`;
-              const detail = data.Distrito || '';
-              // No exact coords for 4-digit, fallback to Nominatim
-              fetch(`https://nominatim.openstreetmap.org/search?format=json&postalcode=${data.CP4}&country=pt&limit=1&addressdetails=1`, { headers: { 'Accept-Language': 'pt' } })
-                .then(r => r.json()).then(nr => {
-                  if (nr.length > 0) {
+            } else {
+              throw new Error('no points');
+            }
+          })
+          .catch(() => {
+            // Fallback: Nominatim structured postal code search
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&postalcode=${cp4}&country=pt&limit=3&addressdetails=1`, { headers: { 'Accept-Language': 'pt' } })
+              .then(r => r.json())
+              .then(results => {
+                searchResults.innerHTML = '';
+                if (results.length > 0) {
+                  results.forEach(r => {
+                    const a = r.address || {};
+                    const name = `${cp} — ${a.hamlet || a.village || a.town || a.city || r.display_name.split(',')[0]}`;
+                    const detail = [a.town, a.city, a.state].filter(Boolean).slice(0, 2).join(', ');
                     const li = document.createElement('li');
                     li.innerHTML = `<span class="search-result-name">${name}</span><span class="search-result-detail">${detail}</span>`;
                     li.addEventListener('click', () => {
-                      placeSearchMarker(parseFloat(nr[0].lat), parseFloat(nr[0].lon), name);
+                      placeSearchMarker(parseFloat(r.lat), parseFloat(r.lon), name);
                       searchResults.innerHTML = '';
                       searchInput.value = name;
                     });
                     searchResults.appendChild(li);
-                  }
-                }).catch(() => {});
-            }
-          }).catch(() => {});
+                  });
+                }
+              }).catch(() => {});
+          });
         return;
       }
 
