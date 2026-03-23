@@ -764,6 +764,13 @@
   }
 
   // Global handler for popup route clicks
+  window._refreshETAs = async function() {
+    if (!lastSearchData) return;
+    const { name, lat, lon } = lastSearchData;
+    // Re-run the search (will try API again)
+    await placeSearchMarker(lat, lon, name);
+  };
+
   window._showRouteFromPin = async function(fromLat, fromLon, toLat, toLon) {
     await showRoute(fromLat, fromLon, toLat, toLon, '#3b82f6');
   };
@@ -966,6 +973,10 @@
       hospitalHtml += '</table></div>';
     }
 
+    // Check if any ETAs are estimated
+    const hasEstimated = activeETAs.some(r => r.estimated) || activeHospitals.some(h => h.estimated);
+    const refreshBtn = hasEstimated ? `<div style="margin-top:8px;text-align:center;"><button onclick="_refreshETAs()" style="background:#2a2d38;color:#8b8fa3;border:1px solid #353845;border-radius:6px;padding:5px 14px;font-size:10px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.background='#353845';this.style.color='#e2e4ea'" onmouseout="this.style.background='#2a2d38';this.style.color='#8b8fa3'">\u21BB Recalcular ETAs</button></div>` : '';
+
     const popup = `
       <div class="popup-name" style="color:#dc2626">${name}</div>
       <div class="popup-coords">${lat.toFixed(6)}, ${lon.toFixed(6)}</div>
@@ -974,6 +985,7 @@
       </div>
       ${etaHtml}
       ${hospitalHtml}
+      ${refreshBtn}
     `;
     searchMarker.setPopupContent(popup);
   }
