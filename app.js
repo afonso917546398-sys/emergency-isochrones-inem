@@ -954,8 +954,10 @@
         const etaStr = `<strong style="color:${etaColor}">${r.eta} min</strong>${etaLabel}`;
         const bandColor = bandColors[r.bestBand] || '#565a6e';
         const bandBadge = `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:${bandColor}22;color:${bandColor};margin-left:4px;">${r.bestBand}'</span>`;
+        const distKm = Math.round(Math.sqrt((r.pinLat - lat) ** 2 + (r.pinLon - lon) ** 2) * 111);
+        const distStr = `<span style="font-size:9px;color:#565a6e;margin-left:4px;">${distKm}km</span>`;
         const clickFn = `_showRouteFromPin(${r.pinLat},${r.pinLon},${lat},${lon})`;
-        etaHtml += `<tr onclick="${clickFn}" style="cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='transparent'"><td style="padding:3px 2px;"><span style="color:${color};font-weight:600;">${r.name}</span>${bandBadge}</td><td style="padding:3px 2px;text-align:right;">${etaStr}</td></tr>`;
+        etaHtml += `<tr onclick="${clickFn}" style="cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='transparent'"><td style="padding:3px 2px;"><span style="color:${color};font-weight:600;">${r.name}</span>${bandBadge}${distStr}</td><td style="padding:3px 2px;text-align:right;">${etaStr}</td></tr>`;
       });
       etaHtml += '</table></div>';
     } else {
