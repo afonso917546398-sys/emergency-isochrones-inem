@@ -791,29 +791,41 @@
     return Math.round(roadKm / (50 / 60));
   }
 
-  // ─── Grid interpolation: instant ETAs from pre-computed grid ───
-  const grid = ISOCHRONE_DATA.eta_grid;
-  const gridMeta = grid ? grid.meta : null;
-  const gridPoints = grid ? grid.points : [];
-  const gridETAs = grid ? grid.etas : {};
+  // ─── Pre-computed ETAs: 59 origins × 13K real locations (OSRM) ───
+  const gridDests = (typeof GRID_ETAS !== 'undefined') ? GRID_ETAS.destinations : [];
+  const gridETAData = (typeof GRID_ETAS !== 'undefined') ? GRID_ETAS.etas : {};
 
   function getGridETA(sourceName, lat, lon) {
-    if (!gridMeta || !gridETAs[sourceName]) return null;
+    const etas = gridETAData[sourceName];
+    if (!etas || gridDests.length === 0) return null;
 
-    // Find 4 nearest grid points and interpolate
+    // Find nearest pre-computed destination
+    let bestIdx = -1, bestDist = Infinity;
+    for (let i = 0; i < gridDests.length; i++) {
+      const dlat = gridDests[i][0] - lat;
+      const dlon = gridDests[i][1] - lon;
+      const d = dlat * dlat + dlon * dlon;
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+
+    // If nearest point is within ~3km, use its ETA directly
+    if (bestDist < 0.001 && bestIdx >= 0 && etas[bestIdx] !== null) {
+      return Math.round(etas[bestIdx]);
+    }
+
+    // Otherwise interpolate from 3 nearest
     let nearest = [];
-    for (let i = 0; i < gridPoints.length; i++) {
-      const p = gridPoints[i];
-      const d = Math.sqrt((p.lat - lat) ** 2 + (p.lon - lon) ** 2);
-      nearest.push({ idx: i, dist: d });
+    for (let i = 0; i < gridDests.length; i++) {
+      const dlat = gridDests[i][0] - lat;
+      const dlon = gridDests[i][1] - lon;
+      nearest.push({ idx: i, dist: Math.sqrt(dlat * dlat + dlon * dlon) });
     }
     nearest.sort((a, b) => a.dist - b.dist);
-    nearest = nearest.slice(0, 4);
+    nearest = nearest.slice(0, 3);
 
-    // Inverse distance weighting
     let weightedSum = 0, weightSum = 0;
     for (const n of nearest) {
-      const eta = gridETAs[sourceName][n.idx];
+      const eta = etas[n.idx];
       if (eta === null) continue;
       const w = n.dist < 0.0001 ? 10000 : 1 / (n.dist * n.dist);
       weightedSum += eta * w;
