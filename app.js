@@ -1040,52 +1040,95 @@
     map.flyTo([lat, lon], 11, { duration: 0.8 });
     searchMarker.openPopup();
 
-    // ETAs: Valhalla Matrix API (accurate) with grid fallback
+    // ETAs: Pre-computed OSRM grid (primary) with Valhalla API fallback
     const closest3 = findClosest3Hospitals(lat, lon);
     let etaResults = [];
     let hospitalETAs = [];
 
     try {
-      // 1) All vehicles → search point (single matrix request)
+      // 1) All vehicles → search point
       if (reaching.length > 0) {
-        const vSources = reaching.map(s => ({ lat: s.pin.lat, lon: s.pin.lon }));
-        const vResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sources: vSources, targets: [{ lat, lon }], costing: 'auto' })
+        // Try pre-computed grid first (OSRM, accurate)
+        let needsAPI = false;
+        etaResults = reaching.map((state) => {
+          const gridEta = getGridETA(state.pin.name, lat, lon);
+          if (gridEta === null) needsAPI = true;
+          return {
+            name: state.pin.name, originalName: state.pin.name,
+            layerType: state.layerType, subGroup: state.subGroup,
+            bestBand: state._bestBand,
+            eta: gridEta,
+            estimated: gridEta ? false : 'pending',
+            pinLat: state.pin.lat, pinLon: state.pin.lon
+          };
         });
-        if (vResp.ok) {
-          const rows = (await vResp.json()).sources_to_targets || [];
-          etaResults = reaching.map((state, i) => {
-            const t = rows[i]?.[0]?.time;
-            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-            const gridEta = mins === null ? getGridETA(state.pin.name, lat, lon) : null;
-            return {
-              name: state.pin.name, originalName: state.pin.name,
-              layerType: state.layerType, subGroup: state.subGroup,
-              bestBand: state._bestBand,
-              eta: mins ?? gridEta ?? fallbackETA(state.pin.lat, state.pin.lon, lat, lon),
-              estimated: mins ? false : (gridEta ? 'grid' : 'distance'),
-              pinLat: state.pin.lat, pinLon: state.pin.lon
-            };
+
+        // Fill gaps with Valhalla API if any grid misses
+        if (needsAPI) {
+          try {
+            const vSources = reaching.map(s => ({ lat: s.pin.lat, lon: s.pin.lon }));
+            const vResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sources: vSources, targets: [{ lat, lon }], costing: 'auto' })
+            });
+            if (vResp.ok) {
+              const rows = (await vResp.json()).sources_to_targets || [];
+              etaResults.forEach((r, i) => {
+                if (r.eta === null) {
+                  const t = rows[i]?.[0]?.time;
+                  const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+                  r.eta = mins ?? fallbackETA(r.pinLat, r.pinLon, lat, lon);
+                  r.estimated = mins ? false : 'distance';
+                }
+              });
+            }
+          } catch { /* Valhalla failed, use distance fallback for remaining */ }
+
+          // Final fallback for any still-null ETAs
+          etaResults.forEach(r => {
+            if (r.eta === null) {
+              r.eta = fallbackETA(r.pinLat, r.pinLon, lat, lon);
+              r.estimated = 'distance';
+            }
           });
-        } else { throw new Error('API failed'); }
+        }
       }
 
-      // 2) Search point → hospitals (single matrix request)
+      // 2) Search point → hospitals (grid first, then API fallback)
       if (closest3.length > 0) {
-        const hResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sources: [{ lat, lon }], targets: closest3.map(h => ({ lat: h.lat, lon: h.lon })), costing: 'auto' })
+        let needsHospAPI = false;
+        hospitalETAs = closest3.map((h) => {
+          const gridEta = getGridETA(h.name, lat, lon);
+          if (gridEta === null) needsHospAPI = true;
+          return { ...h, eta: gridEta, estimated: gridEta ? false : 'pending' };
         });
-        if (hResp.ok) {
-          const row = (await hResp.json()).sources_to_targets?.[0] || [];
-          hospitalETAs = closest3.map((h, i) => {
-            const t = row[i]?.time;
-            const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-            const gridEta = mins === null ? getGridETA(h.name, lat, lon) : null;
-            return { ...h, eta: mins ?? gridEta ?? fallbackETA(lat, lon, h.lat, h.lon), estimated: mins ? false : (gridEta ? 'grid' : 'distance') };
+
+        if (needsHospAPI) {
+          try {
+            const hResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sources: [{ lat, lon }], targets: closest3.map(h => ({ lat: h.lat, lon: h.lon })), costing: 'auto' })
+            });
+            if (hResp.ok) {
+              const row = (await hResp.json()).sources_to_targets?.[0] || [];
+              hospitalETAs.forEach((h, i) => {
+                if (h.eta === null) {
+                  const t = row[i]?.time;
+                  const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
+                  h.eta = mins ?? fallbackETA(lat, lon, h.lat, h.lon);
+                  h.estimated = mins ? false : 'distance';
+                }
+              });
+            }
+          } catch { /* Valhalla failed */ }
+
+          hospitalETAs.forEach(h => {
+            if (h.eta === null) {
+              h.eta = fallbackETA(lat, lon, h.lat, h.lon);
+              h.estimated = 'distance';
+            }
           });
-        } else { throw new Error('API failed'); }
+        }
       }
     } catch (e) {
       // Fallback: grid then distance estimate
