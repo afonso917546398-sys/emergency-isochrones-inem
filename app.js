@@ -876,16 +876,22 @@
     return { minutes: Math.round(roadKm / avgSpeedKmMin), estimated: true };
   }
 
-  // Find closest 3 hospitals from our data
+  // Find 2 nearest main hospitals + 1 nearest SUB
   function findClosest3Hospitals(lat, lon) {
     const withDist = ISOCHRONE_DATA.hospitais.map((h, i) => {
       const dlat = h.lat - lat;
       const dlon = h.lon - lon;
       const dist = Math.sqrt(dlat * dlat + dlon * dlon) * 111; // approx km
-      return { ...h, _key: `hospital_${i}`, dist };
+      const isSub = h.name.startsWith('SUB ');
+      return { ...h, _key: `hospital_${i}`, dist, isSub };
     });
     withDist.sort((a, b) => a.dist - b.dist);
-    return withDist.slice(0, 3);
+
+    const mainHospitals = withDist.filter(h => !h.isSub).slice(0, 2);
+    const nearestSub = withDist.filter(h => h.isSub).slice(0, 1);
+    const result = [...mainHospitals, ...nearestSub];
+    result.sort((a, b) => a.dist - b.dist);
+    return result;
   }
 
   // Toggle hospital visibility during search (hide all, show only selected)
