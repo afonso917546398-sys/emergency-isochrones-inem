@@ -1024,8 +1024,23 @@
       zIndexOffset: 1000
     });
 
-    // Filter pins: only show those whose 30-min isochrone covers this point
+    // Filter pins: isochrone coverage + pre-computed ETA coverage
     const reaching = filterPinsByReach(lat, lon);
+
+    // Also add pins with pre-computed ETAs that aren't in isochrone reach
+    // (covers edge cases like Rosmaninhal where ETA exists but isochrone polygon doesn't extend)
+    if (typeof GRID_ETAS !== 'undefined') {
+      const reachingNames = new Set(reaching.map(s => s.pin.name));
+      const allPinStates = Object.values(pinState || {});
+      for (const state of allPinStates) {
+        if (!state.pin || reachingNames.has(state.pin.name)) continue;
+        const gridEta = getGridETA(state.pin.name, lat, lon);
+        if (gridEta !== null && gridEta <= 90) { // within 90 min by road
+          reaching.push({ ...state, _bestBand: gridEta <= 10 ? '10' : gridEta <= 20 ? '20' : gridEta <= 30 ? '30' : '60' });
+        }
+      }
+    }
+
     searchFilterActive = true;
 
     // Count by band
