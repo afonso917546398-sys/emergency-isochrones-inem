@@ -1028,17 +1028,26 @@
     const reaching = filterPinsByReach(lat, lon);
 
     // Also add pins with pre-computed ETAs that aren't in isochrone reach
-    // (covers edge cases like Rosmaninhal where ETA exists but isochrone polygon doesn't extend)
     if (typeof GRID_ETAS !== 'undefined') {
       const reachingNames = new Set(reaching.map(s => s.pin.name));
-      const allPinStates = Object.values(pinState || {});
-      for (const state of allPinStates) {
-        if (!state.pin || reachingNames.has(state.pin.name)) continue;
+      Object.entries(pinState).forEach(([key, state]) => {
+        if (!state.pin || reachingNames.has(state.pin.name)) return;
         const gridEta = getGridETA(state.pin.name, lat, lon);
-        if (gridEta !== null && gridEta <= 90) { // within 90 min by road
-          reaching.push({ ...state, _bestBand: gridEta <= 10 ? '10' : gridEta <= 20 ? '20' : gridEta <= 30 ? '30' : '60' });
+        if (gridEta !== null && gridEta <= 90) {
+          togglePin(key, true); // re-enable the pin on map
+          state._bestBand = gridEta <= 10 ? '10' : gridEta <= 20 ? '20' : gridEta <= 30 ? '30' : '60';
+          reaching.push(state);
+          // Update sidebar checkbox
+          const item = document.querySelector(`[data-pin-key="${key}"]`);
+          if (item) {
+            const cb = item.querySelector('.pin-checkbox');
+            const pinColor = state.subGroup === 'vmer' ? COLORS.vmer : state.subGroup === 'siv' ? '#10b981' : COLORS.aem;
+            cb.classList.add('checked');
+            cb.style.background = pinColor;
+            item.classList.add('enabled');
+          }
         }
-      }
+      });
     }
 
     searchFilterActive = true;
