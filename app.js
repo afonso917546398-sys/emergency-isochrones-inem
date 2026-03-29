@@ -799,7 +799,7 @@
 
     // If nearest point is within ~3km, use its ETA directly
     if (bestDist < 0.001 && bestIdx >= 0 && etas[bestIdx] !== null) {
-      return Math.round(etas[bestIdx]);
+      return Math.round(etas[bestIdx] / EMERGENCY_SPEED_FACTOR);
     }
 
     // Otherwise interpolate from 3 nearest
@@ -822,7 +822,7 @@
     }
 
     if (weightSum === 0) return null;
-    return Math.round(weightedSum / weightSum);
+    return Math.round((weightedSum / weightSum) / EMERGENCY_SPEED_FACTOR);
   }
 
   // Get ETA between two points via OSRM with fallback
