@@ -683,7 +683,7 @@
   let activeRoutePin = null;    // route from pin to location (blue)
   let activeRouteHosp = null;   // route from location to hospital (white)
 
-  // Fetch route shape from Valhalla and draw on map
+  // Fetch route shape from OSRM and draw on map (matches pre-computed ETAs)
   // routeType: 'pin' (blue, meio→local) or 'hospital' (white, local→hospital)
   async function showRoute(fromLat, fromLon, toLat, toLon, routeType) {
     const color = routeType === 'hospital' ? '#ffffff' : '#3b82f6';
@@ -694,26 +694,15 @@
     if (routeType === 'hospital' && activeRouteHosp) { map.removeLayer(activeRouteHosp); activeRouteHosp = null; }
 
     try {
-      const payload = {
-        locations: [
-          { lat: fromLat, lon: fromLon },
-          { lat: toLat, lon: toLon }
-        ],
-        costing: 'auto',
-        units: 'km',
-        shape_format: 'polyline6'
-      };
-      const resp = await fetch(VALHALLA_ROUTE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=simplified&geometries=geojson`;
+      const resp = await fetch(url);
       if (!resp.ok) { drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType); return; }
       const data = await resp.json();
-      const shape = data.trip?.legs?.[0]?.shape;
-      if (!shape) { drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType); return; }
+      const geom = data.routes?.[0]?.geometry;
+      if (!geom) { drawStraightLine(fromLat, fromLon, toLat, toLon, color, weight, routeType); return; }
 
-      const coords = decodePolyline6(shape);
+      // GeoJSON coords are [lon, lat] — Leaflet needs [lat, lon]
+      const coords = geom.coordinates.map(c => [c[1], c[0]]);
       const layer = L.polyline(coords, {
         color, weight, opacity: 0.85, lineCap: 'round', lineJoin: 'round'
       }).addTo(map);
@@ -836,44 +825,25 @@
     return Math.round(weightedSum / weightSum);
   }
 
-  // Get ETA between two points via Valhalla with retry + fallback
+  // Get ETA between two points via OSRM with fallback
   // Returns { minutes, estimated } where estimated=true means fallback was used
   async function getETA(fromLat, fromLon, toLat, toLon) {
-    const payload = {
-      locations: [
-        { lat: fromLat, lon: fromLon },
-        { lat: toLat, lon: toLon }
-      ],
-      costing: 'auto',
-      units: 'km'
-    };
-
-    // Try up to 3 times with increasing delay
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
-        const resp = await fetch(VALHALLA_ROUTE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (resp.status === 429) continue;
-        if (!resp.ok) continue;
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=false`;
+      const resp = await fetch(url);
+      if (resp.ok) {
         const data = await resp.json();
-        const secs = data.trip?.summary?.time;
+        const secs = data.routes?.[0]?.duration;
         if (secs) return { minutes: Math.round((secs / 60) / EMERGENCY_SPEED_FACTOR), estimated: false };
-      } catch { /* retry */ }
-    }
+      }
+    } catch { /* fallback */ }
 
-    // Fallback: conservative estimate from straight-line distance
-    // Roads are typically 1.4-1.8x longer than straight line (use 1.6x)
-    // Emergency avg speed ~50 km/h (accounts for urban, rural, mountain mix)
+    // Fallback: distance estimate
     const dlat = fromLat - toLat;
     const dlon = fromLon - toLon;
     const straightKm = Math.sqrt(dlat * dlat + dlon * dlon) * 111;
     const roadKm = straightKm * 1.6;
-    const avgSpeedKmMin = 50 / 60; // 50 km/h in km/min
-    return { minutes: Math.round(roadKm / avgSpeedKmMin), estimated: true };
+    return { minutes: Math.round(roadKm / (50 / 60)), estimated: true };
   }
 
   // Find 2 nearest main hospitals + 1 nearest SUB
@@ -1096,23 +1066,24 @@
         // Fill gaps with Valhalla API if any grid misses
         if (needsAPI) {
           try {
-            const vSources = reaching.map(s => ({ lat: s.pin.lat, lon: s.pin.lon }));
-            const vResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sources: vSources, targets: [{ lat, lon }], costing: 'auto' })
-            });
-            if (vResp.ok) {
-              const rows = (await vResp.json()).sources_to_targets || [];
-              etaResults.forEach((r, i) => {
-                if (r.eta === null) {
-                  const t = rows[i]?.[0]?.time;
-                  const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-                  r.eta = mins ?? fallbackETA(r.pinLat, r.pinLon, lat, lon);
-                  r.estimated = mins ? false : 'distance';
-                }
-              });
+            // OSRM table: sources (vehicles with missing ETAs) → destination (search point)
+            const missing = etaResults.map((r, i) => r.eta === null ? i : -1).filter(i => i >= 0);
+            const coords = missing.map(i => `${reaching[i].pin.lon},${reaching[i].pin.lat}`).join(';');
+            const osrmUrl = `https://router.project-osrm.org/table/v1/driving/${coords};${lon},${lat}?sources=${missing.map((_, i) => i).join(';')}&destinations=${missing.length}`;
+            const osrmResp = await fetch(osrmUrl);
+            if (osrmResp.ok) {
+              const osrmData = await osrmResp.json();
+              if (osrmData.code === 'Ok') {
+                missing.forEach((origIdx, i) => {
+                  const secs = osrmData.durations?.[i]?.[0];
+                  if (secs) {
+                    etaResults[origIdx].eta = Math.round((secs / 60) / EMERGENCY_SPEED_FACTOR);
+                    etaResults[origIdx].estimated = false;
+                  }
+                });
+              }
             }
-          } catch { /* Valhalla failed, use distance fallback for remaining */ }
+          } catch { /* OSRM failed */ }
 
           // Final fallback for any still-null ETAs
           etaResults.forEach(r => {
@@ -1135,22 +1106,23 @@
 
         if (needsHospAPI) {
           try {
-            const hResp = await fetch(VALHALLA_ROUTE_URL.replace('/route', '/sources_to_targets'), {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sources: [{ lat, lon }], targets: closest3.map(h => ({ lat: h.lat, lon: h.lon })), costing: 'auto' })
-            });
+            const missing = hospitalETAs.map((h, i) => h.eta === null ? i : -1).filter(i => i >= 0);
+            const hCoords = `${lon},${lat};` + missing.map(i => `${closest3[i].lon},${closest3[i].lat}`).join(';');
+            const hUrl = `https://router.project-osrm.org/table/v1/driving/${hCoords}?sources=0&destinations=${missing.map((_, i) => i + 1).join(';')}`;
+            const hResp = await fetch(hUrl);
             if (hResp.ok) {
-              const row = (await hResp.json()).sources_to_targets?.[0] || [];
-              hospitalETAs.forEach((h, i) => {
-                if (h.eta === null) {
-                  const t = row[i]?.time;
-                  const mins = (t && t > 0) ? Math.round(t / 60 / EMERGENCY_SPEED_FACTOR) : null;
-                  h.eta = mins ?? fallbackETA(lat, lon, h.lat, h.lon);
-                  h.estimated = mins ? false : 'distance';
-                }
-              });
+              const hData = await hResp.json();
+              if (hData.code === 'Ok') {
+                missing.forEach((origIdx, i) => {
+                  const secs = hData.durations?.[0]?.[i];
+                  if (secs) {
+                    hospitalETAs[origIdx].eta = Math.round((secs / 60) / EMERGENCY_SPEED_FACTOR);
+                    hospitalETAs[origIdx].estimated = false;
+                  }
+                });
+              }
             }
-          } catch { /* Valhalla failed */ }
+          } catch { /* OSRM failed */ }
 
           hospitalETAs.forEach(h => {
             if (h.eta === null) {
